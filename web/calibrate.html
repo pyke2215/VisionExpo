@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Line / vùng – Vision Expo</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <main>
+    <div class="row" style="margin-bottom:12px">
+      <h2 style="margin:0">Thiết lập đếm người vào / ra</h2>
+      <select id="camSelect" style="min-width:220px"></select>
+      <div class="tabs" id="modeTabs" style="margin:0">
+        <button data-mode="line">Line</button>
+        <button data-mode="zone">Vùng (polygon)</button>
+      </div>
+      <span class="grow"></span>
+      <button id="btnSnap">Chụp lại khung hình</button>
+      <button id="btnLive">Ảnh live</button>
+    </div>
+
+    <section class="calib-layout">
+      <div class="canvas-wrap">
+        <canvas id="canvas" width="1280" height="720"></canvas>
+      </div>
+
+      <aside class="col" style="gap:12px">
+        <div class="panel">
+          <h3>Các bước</h3>
+          <ol class="steps" id="steps"></ol>
+          <p class="muted small" id="hint"></p>
+        </div>
+        <div class="panel col">
+          <label class="check"><input type="checkbox" id="chkEnabled" checked /> <span id="enabledLabel">Bật đếm qua line</span></label>
+          <div class="row">
+            <button id="btnFlip">Đảo chiều VÀO/RA</button>
+            <button id="btnClear">Vẽ lại</button>
+          </div>
+          <div class="row">
+            <button id="btnSave" class="primary grow">Lưu</button>
+          </div>
+          <div class="muted small mono" id="coords"></div>
+        </div>
+        <div class="panel">
+          <h3>Bộ đếm camera này</h3>
+          <div class="row" style="gap:18px; font-size:18px">
+            <span>Đang thấy <strong id="cVisible">0</strong></span>
+            <span>Trong <strong id="cInside" style="color:var(--green)">0</strong></span>
+            <span>Ngoài <strong id="cOutside" style="color:var(--orange)">0</strong></span>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button id="btnResetCount" class="danger">Reset đếm</button>
+            <a class="btn" id="lnkLive" href="/">Xem live</a>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </main>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/calibrate.js"></script>
+</body>
+</html>

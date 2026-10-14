@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Socket – Vision Expo</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <main class="col" style="gap:14px">
+    <section class="two-col">
+      <div class="panel col" style="gap:12px">
+        <div class="row"><h2 class="grow" style="margin:0">Cấu hình WebSocket</h2><span class="badge" id="wsState"></span></div>
+        <label class="check"><input type="checkbox" id="cfgEnabled" /> Bật WebSocket</label>
+        <div class="row" style="gap:18px">
+          <label class="field">Tần suất "status" (lần/giây)
+            <input type="number" id="cfgStatusHz" min="0" max="30" step="0.5" style="width:110px" />
+          </label>
+          <label class="field">Tần suất "people" (lần/giây)
+            <input type="number" id="cfgPeopleHz" min="0" max="30" step="0.5" style="width:110px" />
+          </label>
+        </div>
+        <div class="col">
+          <span class="muted small">Chủ đề mặc định khi client không truyền <span class="mono">topics</span></span>
+          <div class="row" id="cfgTopics"></div>
+        </div>
+        <label class="field">Token (để trống = không cần xác thực)
+          <div class="row">
+            <input type="text" id="cfgToken" class="grow mono" placeholder="không có" />
+            <button id="btnGenToken">Tạo ngẫu nhiên</button>
+          </div>
+        </label>
+        <div class="row"><span class="grow"></span><button id="btnSaveCfg" class="primary">Lưu cấu hình</button></div>
+      </div>
+
+      <div class="panel col" style="gap:10px">
+        <h2 style="margin:0">Địa chỉ kết nối</h2>
+        <pre class="code" id="wsUrl"></pre>
+        <div class="row">
+          <button id="btnCopyUrl">Copy URL</button>
+          <span class="muted small">Máy khác trong LAN: chạy <span class="mono">start.bat --host 0.0.0.0</span> rồi thay 127.0.0.1 bằng IP máy này.</span>
+        </div>
+        <h3 style="margin-top:6px">Đã gửi theo chủ đề</h3>
+        <div class="cards" id="sentCards"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="row" style="margin-bottom:8px"><h2 class="grow" style="margin:0">Client đang kết nối <span class="muted small" id="clientCount"></span></h2></div>
+      <table>
+        <thead><tr><th>ID</th><th>Địa chỉ</th><th>Chủ đề</th><th>Camera</th><th>Kết nối</th><th>Đã gửi</th><th>Đã nhận</th><th>User agent</th></tr></thead>
+        <tbody id="clientRows"></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <div class="row" style="margin-bottom:10px">
+        <h2 style="margin:0">Xem message trực tiếp</h2>
+        <div class="row" id="monTopics"></div>
+        <select id="monCamera"><option value="">Tất cả camera</option></select>
+        <span class="grow"></span>
+        <span class="muted small" id="monRate"></span>
+        <button id="btnConnect" class="primary">Kết nối</button>
+        <button id="btnPause">Tạm dừng</button>
+        <button id="btnClear">Xóa</button>
+      </div>
+      <div class="log" id="log"></div>
+      <p class="muted small">Click một dòng để xem JSON đầy đủ. Giữ tối đa 300 message gần nhất.</p>
+    </section>
+
+    <section class="two-col">
+      <div class="panel">
+        <h2>Định dạng message</h2>
+        <pre class="code">// hello: gửi 1 lần khi kết nối
+{"type":"hello","client_id":3,"version":"1.0.0","topics":["status","events"],
+ "available_topics":["status","people","events","tracks"],"cameras":[{"id":"camera_1","name":"Camera 1","enabled":true}]}
+
+// status: định kỳ (status_hz)
+{"type":"status","ts":1791877285.9,
+ "totals":{"persons":3,"inside":2,"outside":1,"entries":42,"exits":38,"objects":7,"alerts":0},
+ "cameras":[{"id":"camera_1","name":"Camera 1","status":"running","fps":14.9,
+             "persons":3,"inside":2,"outside":1,"mode":"zone","entries":42,"exits":38,
+             "alerts":0,"objects":{"backpack":1,"glasses":2}}]}
+// persons = đang thấy; inside / outside = số người đang ở trong / ngoài vùng lúc này
+//   (mode "line": phía có điểm I là trong; null khi camera chưa vẽ line/vùng)
+// persons - inside - outside = người mới xuất hiện, chưa xác định phía
+// entries / exits = tổng lượt vào / ra từ lần reset gần nhất
+
+// people: định kỳ (people_hz), toạ độ chuẩn hoá 0..1 theo frame_size
+{"type":"people","ts":...,"cameras":[{"id":"camera_1","frame_size":[1920,1080],
+ "people":[{"track_id":27,"side":"in","alert":false,"items":["backpack","glasses"],
+            "objects":[{"label":"backpack","vi":"ba lô","category":"bags","conf":0.82,"alert":false,
+                        "box":[0.43,0.38,0.51,0.60]},
+                       {"label":"glasses","vi":"kính mắt","category":"face","conf":0.71,"alert":false,
+                        "box":[0.45,0.31,0.48,0.33]}],
+            "conf":0.88,"box":[0.41,0.30,0.52,0.86],"foot":[0.47,0.85]}]}]}
+// side: "in" | "out" | "unknown"; objects = đồ vật đang hiển thị (đã qua ngưỡng hiển thị + làm mượt)
+
+// events: gửi ngay khi xảy ra
+{"type":"crossing","ts":...,"camera_id":"camera_1","track_id":27,"direction":"in","mode":"zone"}
+{"type":"crossing","ts":...,"camera_id":"camera_1","track_id":27,"direction":"out","mode":"zone","dwell_s":42.5}
+{"type":"alert","ts":...,"camera_id":"camera_1","track_id":31,"items":["knife"],"all_items":["backpack","knife"]}
+{"type":"camera","ts":...,"camera_id":"camera_2","status":"offline","error":"stream stalled"}
+{"type":"reset","ts":...,"camera_id":"camera_1"}
+
+// tracks: tóm tắt 1 người sau khi rời khung (items = số khung thấy vật đó)
+{"type":"track","ts":...,"camera_id":"camera_1","track_id":27,"first_ts":...,"last_ts":...,
+ "duration":12.4,"frames":180,"items":{"backpack":120,"glasses":64},"alert":false,
+ "first_side":"out","last_side":"in"}</pre>
+      </div>
+      <div class="panel">
+        <h2>Code mẫu</h2>
+        <h3>JavaScript (trình duyệt / Node)</h3>
+        <pre class="code" id="sampleJs"></pre>
+        <h3 style="margin-top:12px">Python (pip install websockets)</h3>
+        <pre class="code" id="samplePy"></pre>
+        <h3 style="margin-top:12px">Lệnh gửi lên server</h3>
+        <pre class="code">{"action":"subscribe","topics":["people"]}
+{"action":"unsubscribe","topics":["status"]}
+{"action":"set_cameras","cameras":["camera_1"]}   // null = tất cả
+{"action":"get_status"}
+{"action":"ping"}</pre>
+      </div>
+    </section>
+  </main>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/socket.js"></script>
+</body>
+</html>

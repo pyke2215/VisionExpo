@@ -1,0 +1,29 @@
+# Build + run on the dev machine:   docker compose up -d --build
+# Open http://127.0.0.1:8000/  (WebSocket: ws://127.0.0.1:8000/ws)
+services:
+  vision-expo:
+    image: vision-expo:latest
+    build:
+      context: .
+      args:
+        TORCH_INDEX: https://download.pytorch.org/whl/cu126
+    container_name: vision-expo
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config   # settings.json (cameras, line, socket, db), vocabulary.json
+      - ./data:/app/data       # exhibition.sqlite3
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+    shm_size: "1gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Linux host with a USB webcam: uncomment and use source "0" in the camera settings.
+    # devices:
+    #   - /dev/video0:/dev/video0

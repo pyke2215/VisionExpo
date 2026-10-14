@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YOLO-World – Vision Expo</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <main class="col" style="gap:14px">
+    <section class="panel">
+      <div class="row" style="gap:16px">
+        <h2 style="margin:0">YOLO-World – phát hiện đồ vật theo từ khóa</h2>
+        <span class="badge" id="wStatus">…</span>
+        <span class="grow"></span>
+        <span class="muted small">Mọi thay đổi trên trang này được tự động lưu</span>
+        <button id="btnEnable">…</button>
+      </div>
+      <p class="muted small" id="wInfo"></p>
+      <div class="row" style="gap:22px; align-items:flex-end">
+        <label class="field">Ngưỡng tin cậy đồ vật: <strong id="confVal"></strong>
+          <input type="range" id="conf" min="0.05" max="0.8" step="0.01" style="width:200px" />
+        </label>
+        <label class="field" style="color:var(--red)">Ngưỡng vũ khí: <strong id="alertConfVal"></strong>
+          <input type="range" id="alertConf" min="0.05" max="0.9" step="0.01" style="width:200px" />
+        </label>
+        <label class="field" title="Vật có độ tin cậy dưới mức này vẫn được theo dõi nhưng không vẽ lên khung hình và không tính vào thống kê">Ngưỡng hiển thị: <strong id="showConfVal"></strong>
+          <input type="range" id="showConf" min="0" max="0.95" step="0.01" style="width:200px" />
+        </label>
+        <label class="field">Chạy mỗi N khung hình
+          <input type="number" id="everyN" min="1" max="30" style="width:90px" />
+        </label>
+        <label class="field">imgsz
+          <select id="imgsz"><option>320</option><option>480</option><option>640</option><option>800</option><option>960</option></select>
+        </label>
+        <label class="field">Phạm vi tìm
+          <select id="scope">
+            <option value="person">Chỉ trong vùng crop của người</option>
+            <option value="frame">Toàn khung hình</option>
+          </select>
+        </label>
+        <label class="field" id="marginWrap">Nới rộng crop (%)
+          <input type="number" id="cropMargin" min="0" max="50" step="5" style="width:90px" />
+        </label>
+        <label class="field" id="maxPersonsWrap">Tối đa người / khung
+          <input type="number" id="maxPersons" min="1" max="32" style="width:90px" />
+        </label>
+        <label class="check hidden" id="attachWrap"><input type="checkbox" id="attach" /> Gắn đồ vật cho người mang</label>
+      </div>
+      <div class="row" id="smoothRow" style="gap:22px; align-items:flex-end; margin-top:12px">
+        <label class="field">Hiện đồ vật khi thấy ≥ N / 5 lần chạy gần nhất
+          <input type="number" id="confirmHits" min="1" max="5" style="width:90px" />
+        </label>
+        <label class="field" style="color:var(--red)">Cảnh báo vũ khí khi thấy ≥ N / 5 lần
+          <input type="number" id="alertHits" min="1" max="5" style="width:90px" />
+        </label>
+        <label class="field">Ẩn sau N lần liên tiếp không thấy
+          <input type="number" id="dropMisses" min="1" max="5" style="width:90px" />
+        </label>
+        <label class="field" title="Một vùng có nhiều cách đọc (nón / tóc, dao / điện thoại): loại dẫn đầu phải gấp N lần loại đứng sau mới hiện. 1 = tắt">Độ chênh tối thiểu (×)
+          <input type="number" id="labelMargin" min="1" max="5" step="0.1" style="width:90px" />
+        </label>
+        <label class="field">Bỏ vật nhỏ hơn (px)
+          <input type="number" id="minObjPx" min="0" max="100" style="width:90px" />
+        </label>
+        <label class="check"><input type="checkbox" id="rejectStatic" /> Bỏ vật đứng yên khi người di chuyển (đồ trên bàn, kệ)</label>
+      </div>
+      <p class="muted small" id="smoothHint" style="margin:8px 0 0">
+        Mỗi lần chạy, đồ vật được ghép với vật đã thấy trên cùng người theo vị trí tương đối; nhãn chọn theo bỏ phiếu nhiều lần nên không đổi qua lại giữa các từ gần nghĩa,
+        khung được làm mượt. Số lần chạy tính theo "Chạy mỗi N khung hình".
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <h2 class="grow" style="margin:0">Camera dùng YOLO-World</h2>
+      </div>
+      <div class="row" id="camToggles" style="margin-top:10px"></div>
+    </section>
+
+    <section class="panel">
+      <div class="row" style="margin-bottom:12px">
+        <h2 style="margin:0">Từ vựng <span class="muted small" id="vocabCount"></span></h2>
+        <input type="text" id="search" placeholder="Tìm (vd: bag, ô, phone)…" style="width:260px" />
+        <span class="grow"></span>
+        <button id="btnAllOn">Bật tất cả</button>
+        <button id="btnAllOff">Tắt tất cả</button>
+      </div>
+      <div class="world-cats" id="cats"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Thêm từ mới</h2>
+      <p class="muted small">Mỗi dòng một vật: <span class="mono">tiếng Anh | tiếng Việt</span> (ví dụ <span class="mono">red balloon | bóng bay đỏ</span>).
+        Thêm từ cần mã hóa lại bằng CLIP (máy cần đã chạy setup; lần đầu có thể cần internet). Bật/tắt từ có sẵn thì không cần.</p>
+      <div class="row" style="align-items:flex-start">
+        <textarea id="newWords" rows="4" class="grow" placeholder="selfie stick | gậy tự sướng&#10;rice hat | nón lá"></textarea>
+        <button id="btnAddWords" class="primary">Thêm &amp; build lại</button>
+      </div>
+    </section>
+  </main>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/world.js"></script>
+</body>
+</html>

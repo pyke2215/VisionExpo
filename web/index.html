@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live – Vision Expo</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <main>
+    <section class="kpis">
+      <div class="kpi"><div class="v" id="kPersons">0</div><div class="l">Đang thấy</div></div>
+      <div class="kpi in"><div class="v" id="kInside">0</div><div class="l">Trong vùng</div></div>
+      <div class="kpi out"><div class="v" id="kOutside">0</div><div class="l">Ngoài vùng</div></div>
+      <div class="kpi"><div class="v" id="kObj">0</div><div class="l">Đồ vật (YOLO-World)</div></div>
+      <div class="kpi alert" id="kAlertBox"><div class="v" id="kAlert">0</div><div class="l">Cảnh báo vũ khí</div></div>
+    </section>
+
+    <section class="live-layout">
+      <div class="cam-list-wrap">
+        <h3>Camera</h3>
+        <div class="cam-list" id="camList"></div>
+        <p class="muted small" style="margin-top:12px">
+          Phím 1–9: chuyển camera · G: lưới · A: tự chuyển · F: toàn màn hình · K: chế độ kiosk
+        </p>
+      </div>
+
+      <div class="viewer">
+        <div class="row">
+          <strong id="viewTitle" class="grow">—</strong>
+          <button id="btnGrid">Lưới</button>
+          <button id="btnAuto">Tự chuyển</button>
+          <button id="btnKiosk">Kiosk</button>
+          <button id="btnFull">Toàn màn hình</button>
+          <button id="btnReset" class="danger">Reset đếm</button>
+        </div>
+        <div class="stage" id="stage"><div class="empty">Chưa có camera. Vào trang Cameras để thêm.</div></div>
+      </div>
+
+      <div class="side-panels">
+        <div class="panel">
+          <h3>Người trong khung</h3>
+          <div class="list" id="peopleList"></div>
+        </div>
+        <div class="panel">
+          <h3>Sự kiện vào / ra</h3>
+          <div class="list" id="eventList"></div>
+        </div>
+        <div class="panel">
+          <h3>Đồ vật phát hiện</h3>
+          <div class="chips" id="objList"></div>
+          <div class="muted small" id="worldState" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/live.js"></script>
+</body>
+</html>

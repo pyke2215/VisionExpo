@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dữ liệu – Vision Expo</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <main class="col" style="gap:14px">
+    <section class="panel">
+      <div class="row" style="margin-bottom:10px">
+        <h2 class="grow" style="margin:0">Cơ sở dữ liệu</h2>
+        <span class="muted small mono" id="dbPath"></span>
+      </div>
+      <div class="cards" id="summaryCards"></div>
+    </section>
+
+    <section class="panel">
+      <div class="row" style="align-items:flex-end">
+        <label class="field">Camera
+          <select id="fCamera"><option value="">Tất cả</option></select>
+        </label>
+        <label class="field">Từ
+          <input type="datetime-local" id="fFrom" />
+        </label>
+        <label class="field">Đến
+          <input type="datetime-local" id="fTo" />
+        </label>
+        <button id="btnToday">Hôm nay</button>
+        <button id="btn24h">24 giờ</button>
+        <button id="btn7d">7 ngày</button>
+        <button id="btnApply" class="primary">Xem</button>
+        <span class="grow"></span>
+        <a class="btn" id="lnkEventsCsv">Xuất sự kiện (CSV)</a>
+        <a class="btn" id="lnkTracksCsv">Xuất lượt người (CSV)</a>
+      </div>
+    </section>
+
+    <section class="two-col">
+      <div class="panel">
+        <div class="row"><h2 class="grow" style="margin:0">Theo giờ</h2>
+          <span class="small"><span style="color:var(--green)">■</span> vào &nbsp;<span style="color:var(--orange)">■</span> ra &nbsp;<span style="color:var(--accent)">●</span> lượt người &nbsp;<span style="color:var(--red)">▲</span> cảnh báo</span>
+        </div>
+        <svg class="chart" id="chart" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
+        <div class="cards" id="rangeCards" style="margin-top:10px"></div>
+      </div>
+      <div class="panel">
+        <h2>Đồ vật xuất hiện nhiều nhất <span class="muted small">(số lượt người mang)</span></h2>
+        <div class="chips" id="topItems"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="tabs">
+        <button data-tab="tracks" class="active">Lượt người</button>
+        <button data-tab="events">Sự kiện</button>
+      </div>
+
+      <div id="tabTracks">
+        <div class="row" style="margin-bottom:8px">
+          <label class="check"><input type="checkbox" id="tAlert" /> Chỉ người có cảnh báo</label>
+          <label class="field" style="flex-direction:row; align-items:center; gap:6px">Mang theo
+            <select id="tItem"><option value="">bất kỳ</option></select>
+          </label>
+        </div>
+        <table>
+          <thead><tr><th>Bắt đầu</th><th>Camera</th><th>#</th><th>Thời gian</th><th>Chiều</th><th>Mang theo</th></tr></thead>
+          <tbody id="trackRows"></tbody>
+        </table>
+        <div class="pager"><span class="muted small" id="trackInfo"></span><button id="tPrev">‹</button><button id="tNext">›</button></div>
+      </div>
+
+      <div id="tabEvents" class="hidden">
+        <div class="row" style="margin-bottom:8px" id="eTypes"></div>
+        <table>
+          <thead><tr><th>Thời gian</th><th>Camera</th><th>Loại</th><th>#</th><th>Chi tiết</th></tr></thead>
+          <tbody id="eventRows"></tbody>
+        </table>
+        <div class="pager"><span class="muted small" id="eventInfo"></span><button id="ePrev">‹</button><button id="eNext">›</button></div>
+      </div>
+    </section>
+
+    <section class="panel col" style="gap:12px">
+      <h2 style="margin:0">Cấu hình lưu trữ</h2>
+      <div class="row" style="gap:20px; align-items:flex-end">
+        <label class="check"><input type="checkbox" id="cEnabled" /> Ghi dữ liệu</label>
+        <label class="check"><input type="checkbox" id="cTracks" /> Lưu lượt người</label>
+        <label class="check"><input type="checkbox" id="cRestore" /> Khôi phục bộ đếm khi khởi động lại</label>
+        <label class="field">Lấy mẫu số liệu mỗi (giây)
+          <input type="number" id="cSample" min="2" max="3600" style="width:110px" />
+        </label>
+        <label class="field">Giữ dữ liệu (ngày, 0 = mãi mãi)
+          <input type="number" id="cRetention" min="0" max="3650" style="width:110px" />
+        </label>
+        <span class="grow"></span>
+        <button id="btnSaveDb" class="primary">Lưu</button>
+        <button id="btnClearDb" class="danger">Xóa toàn bộ dữ liệu</button>
+      </div>
+    </section>
+  </main>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/data.js"></script>
+</body>
+</html>

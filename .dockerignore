@@ -1,0 +1,9 @@
+.venv
+dist
+data
+**/__pycache__
+**/*.pyc
+config/*.tmp
+*.bat
+.gitignore
+README.md

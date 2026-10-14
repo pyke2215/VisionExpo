@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cameras – Vision Expo</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <main class="col" style="gap:16px">
+    <section class="panel">
+      <div class="row" style="margin-bottom:10px">
+        <h2 class="grow">Danh sách camera</h2>
+        <button id="btnRefresh">Làm mới</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Trạng thái</th><th>Tên / ID</th><th>Nguồn</th><th>FPS</th><th>Người</th><th>Vào / Ra</th><th></th></tr>
+        </thead>
+        <tbody id="camRows"></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>Thêm camera</h2>
+      <div class="row" style="align-items:flex-end">
+        <label class="field" style="width:200px">Tên hiển thị
+          <input type="text" id="addName" placeholder="Cổng chính" />
+        </label>
+        <label class="field" style="width:150px">Loại nguồn
+          <select id="addKind">
+            <option value="rtsp">RTSP / IP camera</option>
+            <option value="webcam">Webcam USB</option>
+            <option value="file">File video (demo)</option>
+          </select>
+        </label>
+        <label class="field grow">Nguồn
+          <input type="text" id="addSource" placeholder="rtsp://user:pass@192.168.1.10:554/Streaming/Channels/101" />
+        </label>
+        <button id="btnTest">Kiểm tra</button>
+        <button id="btnAdd" class="primary">Thêm</button>
+      </div>
+      <div class="row small muted" style="margin-top:8px" id="rtspHelp">
+        Mẫu: Hikvision <span class="mono">rtsp://user:pass@IP:554/Streaming/Channels/101</span> (102 = luồng phụ, nhẹ hơn) ·
+        Dahua <span class="mono">rtsp://user:pass@IP:554/cam/realmonitor?channel=1&amp;subtype=0</span> ·
+        Webcam: <span class="mono">0</span>, <span class="mono">1</span>… · File: đường dẫn <span class="mono">.mp4</span> (tự lặp lại)
+      </div>
+      <div id="testResult" style="margin-top:10px"></div>
+    </section>
+  </main>
+
+  <dialog id="editDlg">
+    <form method="dialog" id="editForm" class="col" style="gap:14px">
+      <div class="row"><h2 class="grow" id="editTitle">Sửa camera</h2><span class="muted mono small" id="editId"></span></div>
+      <div class="form-grid">
+        <label class="field">Tên hiển thị <input type="text" name="name" /></label>
+        <label class="field" style="grid-column: span 2">Nguồn (RTSP / webcam index / file)
+          <input type="text" name="source" />
+        </label>
+        <label class="field">Ngưỡng tin cậy người (conf)
+          <input type="number" name="conf" min="0.05" max="0.95" step="0.05" />
+        </label>
+        <label class="field">Kích thước suy luận (imgsz)
+          <select name="imgsz"><option>320</option><option>480</option><option>640</option><option>800</option><option>960</option><option>1280</option></select>
+        </label>
+        <label class="field">FPS xử lý tối đa
+          <input type="number" name="process_fps" min="1" max="60" step="1" />
+        </label>
+        <label class="field">Độ rộng luồng xem (px)
+          <input type="number" name="stream_width" min="320" max="3840" step="10" />
+        </label>
+        <label class="field">Chất lượng JPEG
+          <input type="number" name="jpeg_quality" min="30" max="95" step="5" />
+        </label>
+      </div>
+      <div class="row" style="gap:18px">
+        <label class="check"><input type="checkbox" name="enabled" /> Bật camera</label>
+        <label class="check"><input type="checkbox" name="detect_enabled" /> Phát hiện người</label>
+        <label class="check"><input type="checkbox" name="show_boxes" /> Vẽ khung</label>
+        <label class="check"><input type="checkbox" name="show_skeleton" /> Vẽ khung xương</label>
+        <label class="check"><input type="checkbox" name="world_enabled" /> YOLO-World</label>
+        <label class="check"><input type="checkbox" name="crossing_enabled" /> Đếm vào/ra (line hoặc vùng)</label>
+      </div>
+      <div class="row">
+        <button type="button" id="editTest">Kiểm tra nguồn</button>
+        <span class="grow"></span>
+        <button value="cancel" formnovalidate>Hủy</button>
+        <button type="button" id="editSave" class="primary">Lưu</button>
+      </div>
+      <div id="editTestResult"></div>
+    </form>
+  </dialog>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/cameras.js"></script>
+</body>
+</html>

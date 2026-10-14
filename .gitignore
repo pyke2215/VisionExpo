@@ -1,0 +1,9 @@
+.venv/
+dist/
+data/
+__pycache__/
+*.pyc
+config/settings.json
+config/*.tmp
+models/weights/
+models/*.pt

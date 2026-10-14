@@ -1,0 +1,23 @@
+# Run on the exhibition PC (image loaded with: docker load -i vision-expo-image.tar)
+#   docker compose up -d
+# Open http://127.0.0.1:8000/  (WebSocket: ws://<this-pc-ip>:8000/ws)
+services:
+  vision-expo:
+    image: vision-expo:latest
+    container_name: vision-expo
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+    shm_size: "1gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

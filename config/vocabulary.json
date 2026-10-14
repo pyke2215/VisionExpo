@@ -1,0 +1,332 @@
+{
+  "categories": [
+    {
+      "id": "headwear",
+      "label": "Nón & mũ",
+      "alert": false,
+      "suppress": false,
+      "items": [
+        {
+          "en": "hat",
+          "vi": "mũ"
+        },
+        {
+          "en": "cap",
+          "vi": "mũ lưỡi trai"
+        },
+        {
+          "en": "beanie",
+          "vi": "mũ len"
+        },
+        {
+          "en": "bucket hat",
+          "vi": "mũ tai bèo"
+        },
+        {
+          "en": "sun hat",
+          "vi": "mũ rộng vành"
+        },
+        {
+          "en": "conical hat",
+          "vi": "nón lá"
+        },
+        {
+          "en": "helmet",
+          "vi": "mũ bảo hiểm"
+        },
+        {
+          "en": "hard hat",
+          "vi": "mũ bảo hộ"
+        },
+        {
+          "en": "headscarf",
+          "vi": "khăn trùm đầu"
+        },
+        {
+          "en": "headband",
+          "vi": "băng đô"
+        }
+      ]
+    },
+    {
+      "id": "face",
+      "label": "Kính & khẩu trang",
+      "alert": false,
+      "suppress": false,
+      "items": [
+        {
+          "en": "glasses",
+          "vi": "kính mắt"
+        },
+        {
+          "en": "sunglasses",
+          "vi": "kính râm"
+        },
+        {
+          "en": "goggles",
+          "vi": "kính bảo hộ"
+        },
+        {
+          "en": "face mask",
+          "vi": "khẩu trang"
+        },
+        {
+          "en": "face shield",
+          "vi": "tấm chắn mặt"
+        },
+        {
+          "en": "balaclava",
+          "vi": "mũ trùm kín mặt"
+        }
+      ]
+    },
+    {
+      "id": "bags",
+      "label": "Túi",
+      "alert": false,
+      "suppress": false,
+      "items": [
+        {
+          "en": "backpack",
+          "vi": "ba lô"
+        },
+        {
+          "en": "handbag",
+          "vi": "túi xách"
+        },
+        {
+          "en": "shoulder bag",
+          "vi": "túi đeo vai"
+        },
+        {
+          "en": "crossbody bag",
+          "vi": "túi đeo chéo"
+        },
+        {
+          "en": "waist bag",
+          "vi": "túi đeo hông"
+        },
+        {
+          "en": "tote bag",
+          "vi": "túi tote"
+        },
+        {
+          "en": "shopping bag",
+          "vi": "túi mua sắm"
+        },
+        {
+          "en": "plastic bag",
+          "vi": "túi nilon"
+        },
+        {
+          "en": "briefcase",
+          "vi": "cặp tài liệu"
+        },
+        {
+          "en": "suitcase",
+          "vi": "vali"
+        }
+      ]
+    },
+    {
+      "id": "accessories",
+      "label": "Phụ kiện",
+      "alert": false,
+      "suppress": false,
+      "items": [
+        {
+          "en": "watch",
+          "vi": "đồng hồ"
+        },
+        {
+          "en": "smartwatch",
+          "vi": "đồng hồ thông minh"
+        },
+        {
+          "en": "bracelet",
+          "vi": "vòng tay"
+        },
+        {
+          "en": "necklace",
+          "vi": "vòng cổ"
+        },
+        {
+          "en": "earrings",
+          "vi": "bông tai"
+        },
+        {
+          "en": "tie",
+          "vi": "cà vạt"
+        },
+        {
+          "en": "scarf",
+          "vi": "khăn quàng"
+        },
+        {
+          "en": "belt",
+          "vi": "thắt lưng"
+        },
+        {
+          "en": "gloves",
+          "vi": "găng tay"
+        },
+        {
+          "en": "lanyard",
+          "vi": "dây đeo thẻ"
+        },
+        {
+          "en": "id badge",
+          "vi": "thẻ đeo"
+        },
+        {
+          "en": "headphones",
+          "vi": "tai nghe"
+        }
+      ]
+    },
+    {
+      "id": "devices",
+      "label": "Điện thoại",
+      "alert": false,
+      "suppress": false,
+      "items": [
+        {
+          "en": "cell phone",
+          "vi": "điện thoại"
+        }
+      ]
+    },
+    {
+      "id": "weapons",
+      "label": "Vũ khí (cảnh báo)",
+      "alert": true,
+      "suppress": false,
+      "items": [
+        {
+          "en": "knife",
+          "vi": "dao"
+        },
+        {
+          "en": "kitchen knife",
+          "vi": "dao bếp"
+        },
+        {
+          "en": "pocket knife",
+          "vi": "dao gấp"
+        },
+        {
+          "en": "machete",
+          "vi": "mã tấu"
+        },
+        {
+          "en": "sword",
+          "vi": "kiếm"
+        },
+        {
+          "en": "axe",
+          "vi": "rìu"
+        },
+        {
+          "en": "gun",
+          "vi": "súng"
+        },
+        {
+          "en": "handgun",
+          "vi": "súng ngắn"
+        },
+        {
+          "en": "rifle",
+          "vi": "súng trường"
+        },
+        {
+          "en": "shotgun",
+          "vi": "súng săn"
+        },
+        {
+          "en": "baseball bat",
+          "vi": "gậy bóng chày"
+        },
+        {
+          "en": "crowbar",
+          "vi": "xà beng"
+        },
+        {
+          "en": "baton",
+          "vi": "dùi cui"
+        },
+        {
+          "en": "hammer",
+          "vi": "búa"
+        },
+        {
+          "en": "scissors",
+          "vi": "kéo"
+        },
+        {
+          "en": "taser",
+          "vi": "súng điện"
+        },
+        {
+          "en": "slingshot",
+          "vi": "ná cao su"
+        }
+      ]
+    },
+    {
+      "id": "clothing",
+      "label": "Quần áo & tóc – chỉ để lọc nhận nhầm, không hiển thị",
+      "alert": false,
+      "suppress": true,
+      "items": [
+        {
+          "en": "jacket",
+          "vi": "áo khoác"
+        },
+        {
+          "en": "coat",
+          "vi": "áo choàng"
+        },
+        {
+          "en": "hoodie",
+          "vi": "áo hoodie"
+        },
+        {
+          "en": "sweater",
+          "vi": "áo len"
+        },
+        {
+          "en": "shirt",
+          "vi": "áo sơ mi"
+        },
+        {
+          "en": "t-shirt",
+          "vi": "áo phông"
+        },
+        {
+          "en": "dress",
+          "vi": "váy"
+        },
+        {
+          "en": "trousers",
+          "vi": "quần dài"
+        },
+        {
+          "en": "jeans",
+          "vi": "quần jean"
+        },
+        {
+          "en": "shorts",
+          "vi": "quần short"
+        },
+        {
+          "en": "shoes",
+          "vi": "giày"
+        },
+        {
+          "en": "hair",
+          "vi": "tóc"
+        }
+      ]
+    }
+  ]
+}
