@@ -79,7 +79,7 @@ if (-not (Test-Path $PyExe)) {
     try {
         Run $PyExe @("-m", "pip", "install", "--no-warn-script-location", "git+https://github.com/ultralytics/CLIP.git")
     } catch {
-        Write-Warning "CLIP not installed (git missing?). App runs, but adding new YOLO-World words will not work."
+        Write-Warning "CLIP not installed (git missing?). App runs, but adding new object words will not work."
     }
 
     # App-local VC++ runtime so the target PC does not need the redistributable installed.
@@ -106,7 +106,7 @@ foreach ($f in "README.md", "requirements.txt", "start.bat", "start_kiosk.bat") 
     Copy-Item (Join-Path $Root $f) $Dist -Force
 }
 
-$baked = Join-Path $Dist "models\yolo_world_exhibition.pt"
+$baked = Join-Path $Dist "models\yoloe_exhibition.pt"
 $pose = Join-Path $Dist "models\yolo26n-pose.pt"
 if (-not (Test-Path $baked) -or -not (Test-Path $pose)) {
     Step "Preparing models inside the package"

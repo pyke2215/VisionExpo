@@ -50,13 +50,14 @@ GLOBAL_DEFAULTS: dict[str, Any] = {
         "disabled_classes": [],
         "attach_to_person": True,
         "scope": "person",
-        "crop_margin": 0.1,
-        "max_persons": 8,
+        "person_margin": 0.1,  # person box enlarged by this fraction when giving it the objects it carries
         "min_person_px": 60,
         "confirm_hits": 2,
         "alert_hits": 3,
         "drop_misses": 3,
         "reject_static": True,
+        "clip_verify": False,  # after YOLOE, score each crop with CLIP ViT-B/32 and drop below clip_min
+        "clip_min": 0.22,  # cosine similarity; short labels usually land ~0.20–0.30
     },
     "websocket": {
         "enabled": True,

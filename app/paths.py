@@ -16,8 +16,8 @@ SETTINGS_FILE = CONFIG_DIR / "settings.json"
 VOCABULARY_FILE = CONFIG_DIR / "vocabulary.json"
 
 PERSON_MODEL_DEFAULT = "yolo26n-pose.pt"
-WORLD_BASE_MODEL = "yolov8s-worldv2.pt"
-WORLD_BAKED_MODEL = "yolo_world_exhibition.pt"
+WORLD_BASE_MODEL = "yoloe-26l-seg.pt"  # open-vocabulary detector; a "-world" model (yolov8s-worldv2.pt) also works
+WORLD_BAKED_MODEL = "yoloe_exhibition.pt"
 
 
 def resolve_model(name: str) -> Path | str:

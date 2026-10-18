@@ -16,8 +16,8 @@ Mọi lệnh bên dưới chạy trong thư mục `Exhibition/`.
 
 | Đường dẫn | Là gì | Được tạo bởi |
 |---|---|---|
-| `models/*.pt` | Model người `yolo26n-pose.pt` (8 MB), YOLO-World gốc `yolov8s-worldv2.pt` (26 MB), từ vựng đã mã hóa `yolo_world_exhibition.pt` (26 MB) | `setup.bat` hoặc `docker compose build` (tự tải) |
-| `models/weights/clip/` | Cache CLIP (~340 MB), chỉ cần khi thêm từ mới cho YOLO-World | Như trên |
+| `models/*.pt` | Model người `yolo26n-pose.pt` (8 MB), model đồ vật gốc `yoloe-26l-seg.pt` (~70 MB), từ vựng đã mã hóa `yoloe_exhibition.pt` + chữ ký `yoloe_exhibition.json` | `setup.bat` hoặc `docker compose build` (tự tải) |
+| `models/mobileclip2_b.ts` | Bộ mã hóa chữ MobileCLIP (~240 MB), chỉ cần khi thêm / đổi từ vựng | Như trên |
 | `config/settings.json` | Danh sách camera (có mật khẩu RTSP), line/vùng, mọi thông số | App tự tạo lần chạy đầu, sau đó chỉnh trên web |
 | `data/` | Database SQLite | App tự tạo |
 | `.venv/`, `dist/` | Môi trường Python, bản đóng gói | `setup.bat`, `build_portable.bat` |
@@ -42,7 +42,7 @@ Double-click `setup.bat`. Script sẽ:
 2. Cài PyTorch: bản CUDA 12.6 nếu `nvidia-smi` chạy được, ngược lại bản CPU.
 3. Cài thư viện trong `requirements.txt`.
 4. Cài CLIP (nếu lỗi do thiếu Git thì app vẫn chạy, chỉ không thêm được từ mới).
-5. Chạy `tools/prepare_models.py`: tải model vào `models/`, mã hóa bộ từ vựng thành `models/yolo_world_exhibition.pt`.
+5. Chạy `tools/prepare_models.py`: tải model vào `models/`, mã hóa bộ từ vựng thành `models/yoloe_exhibition.pt`.
 6. Tạo `config/settings.json` mặc định (máy không có GPU thì đặt `device = "cpu"`).
 
 Sau bước này app chạy được offline.
@@ -66,7 +66,7 @@ git pull
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Nếu `config/vocabulary.json` thay đổi, app tự mã hóa lại khi khởi động (cần CLIP đã cài).
+Nếu `config/vocabulary.json` thay đổi, app tự mã hóa lại khi khởi động (cần CLIP đã cài và `models/mobileclip2_b.ts`). File `vocabulary.json` kiểu cũ (mỗi từ đồng nghĩa một nhãn) tự chuyển sang bộ nhãn gộp, giữ các từ tự thêm.
 
 ---
 
@@ -150,11 +150,11 @@ Giải nén `VisionExpo.zip` ở máy đích, chạy `start.bat` hoặc `start_k
 
 ## Sau khi app chạy lần đầu
 
-Cấu hình mặc định chỉ có một camera "Webcam" và YOLO-World đang **tắt**. Làm lần lượt (chi tiết ở [DASHBOARD_GUIDE.md](DASHBOARD_GUIDE.md)):
+Cấu hình mặc định chỉ có một camera "Webcam" và nhận diện đồ vật đang **tắt**. Làm lần lượt (chi tiết ở [DASHBOARD_GUIDE.md](DASHBOARD_GUIDE.md)):
 
 1. **Cameras** → thêm camera RTSP (ví dụ Hikvision `rtsp://user:pass@192.168.1.10:554/Streaming/Channels/101`), bấm **Kiểm tra** để xem trước rồi **Thêm**.
 2. **Line / Vùng** → vẽ line hoặc vùng đếm cho từng camera, **Lưu**.
-3. **YOLO-World** → bấm nút bật, chỉnh ngưỡng nếu cần.
+3. **Đồ vật** → bấm nút bật, chỉnh ngưỡng nếu cần (có GPU thì đặt imgsz 960).
 4. **Socket** → nếu có app khác nhận dữ liệu: đặt token (tuỳ chọn), copy URL. Định dạng dữ liệu: [WEBSOCKET_API.md](WEBSOCKET_API.md).
 
 ## Cho máy khác trong LAN truy cập
@@ -177,7 +177,7 @@ Chỉ cần giữ `config/` (camera, line, thông số, từ vựng) và `data/e
 | `start.bat` báo "Chua cai dat" | Chưa chạy `setup.bat`, hoặc `.venv` bị xóa |
 | Log `CUDA not available, falling back ... to cpu` | Cài nhầm PyTorch CPU hoặc driver cũ. Chạy `.venv\Scripts\python.exe -c "import torch; print(torch.cuda.is_available())"`; nếu `False` thì cài lại torch: `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126 --force-reinstall` |
 | Camera "offline" / "reconnecting" | Sai URL RTSP, sai mật khẩu, khác mạng. Thử URL bằng VLC. Nhiều camera hoặc máy yếu thì dùng luồng phụ (`.../Channels/102`) |
-| YOLO-World "error" | Thiếu `models/yolo_world_exhibition.pt` và không có internet để tạo lại. Chạy `.venv\Scripts\python.exe tools\prepare_models.py` |
+| Đồ vật "error" | Thiếu `models/yoloe_exhibition.pt` (hoặc từ vựng đã đổi) và không có `yoloe-26l-seg.pt` / `mobileclip2_b.ts` / internet để tạo lại. Chạy `.venv\Scripts\python.exe tools\prepare_models.py` |
 | Thêm từ mới báo lỗi rebuild | Chưa cài CLIP (thiếu Git lúc setup). Cài Git rồi `.venv\Scripts\python.exe -m pip install git+https://github.com/ultralytics/CLIP.git` |
 | `[Errno 10048]` / cổng đang dùng | Một server khác đang chạy cổng 8000. Tắt nó hoặc dùng `--port 8080` |
 | Docker: `HCS_E_HYPERV_NOT_INSTALLED`, lệnh `docker` treo | Chưa bật Virtual Machine Platform: làm bước B.1 rồi khởi động lại máy |

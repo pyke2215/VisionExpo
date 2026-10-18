@@ -1,4 +1,5 @@
 {
+  "version": 3,
   "categories": [
     {
       "id": "headwear",
@@ -8,43 +9,17 @@
       "items": [
         {
           "en": "hat",
-          "vi": "mũ"
-        },
-        {
-          "en": "cap",
-          "vi": "mũ lưỡi trai"
-        },
-        {
-          "en": "beanie",
-          "vi": "mũ len"
-        },
-        {
-          "en": "bucket hat",
-          "vi": "mũ tai bèo"
-        },
-        {
-          "en": "sun hat",
-          "vi": "mũ rộng vành"
-        },
-        {
-          "en": "conical hat",
-          "vi": "nón lá"
+          "vi": "nón / mũ",
+          "prompts": [
+            "hat"
+          ]
         },
         {
           "en": "helmet",
-          "vi": "mũ bảo hiểm"
-        },
-        {
-          "en": "hard hat",
-          "vi": "mũ bảo hộ"
-        },
-        {
-          "en": "headscarf",
-          "vi": "khăn trùm đầu"
-        },
-        {
-          "en": "headband",
-          "vi": "băng đô"
+          "vi": "mũ bảo hiểm",
+          "prompts": [
+            "helmet"
+          ]
         }
       ]
     },
@@ -56,27 +31,17 @@
       "items": [
         {
           "en": "glasses",
-          "vi": "kính mắt"
-        },
-        {
-          "en": "sunglasses",
-          "vi": "kính râm"
-        },
-        {
-          "en": "goggles",
-          "vi": "kính bảo hộ"
+          "vi": "kính",
+          "prompts": [
+            "glasses"
+          ]
         },
         {
           "en": "face mask",
-          "vi": "khẩu trang"
-        },
-        {
-          "en": "face shield",
-          "vi": "tấm chắn mặt"
-        },
-        {
-          "en": "balaclava",
-          "vi": "mũ trùm kín mặt"
+          "vi": "khẩu trang",
+          "prompts": [
+            "face mask"
+          ]
         }
       ]
     },
@@ -88,43 +53,31 @@
       "items": [
         {
           "en": "backpack",
-          "vi": "ba lô"
+          "vi": "ba lô",
+          "prompts": [
+            "backpack"
+          ]
         },
         {
           "en": "handbag",
-          "vi": "túi xách"
-        },
-        {
-          "en": "shoulder bag",
-          "vi": "túi đeo vai"
-        },
-        {
-          "en": "crossbody bag",
-          "vi": "túi đeo chéo"
-        },
-        {
-          "en": "waist bag",
-          "vi": "túi đeo hông"
-        },
-        {
-          "en": "tote bag",
-          "vi": "túi tote"
+          "vi": "túi xách",
+          "prompts": [
+            "handbag"
+          ]
         },
         {
           "en": "shopping bag",
-          "vi": "túi mua sắm"
-        },
-        {
-          "en": "plastic bag",
-          "vi": "túi nilon"
-        },
-        {
-          "en": "briefcase",
-          "vi": "cặp tài liệu"
+          "vi": "túi mua sắm",
+          "prompts": [
+            "shopping bag"
+          ]
         },
         {
           "en": "suitcase",
-          "vi": "vali"
+          "vi": "vali",
+          "prompts": [
+            "suitcase"
+          ]
         }
       ]
     },
@@ -136,51 +89,25 @@
       "items": [
         {
           "en": "watch",
-          "vi": "đồng hồ"
-        },
-        {
-          "en": "smartwatch",
-          "vi": "đồng hồ thông minh"
-        },
-        {
-          "en": "bracelet",
-          "vi": "vòng tay"
-        },
-        {
-          "en": "necklace",
-          "vi": "vòng cổ"
-        },
-        {
-          "en": "earrings",
-          "vi": "bông tai"
-        },
-        {
-          "en": "tie",
-          "vi": "cà vạt"
-        },
-        {
-          "en": "scarf",
-          "vi": "khăn quàng"
-        },
-        {
-          "en": "belt",
-          "vi": "thắt lưng"
-        },
-        {
-          "en": "gloves",
-          "vi": "găng tay"
-        },
-        {
-          "en": "lanyard",
-          "vi": "dây đeo thẻ"
-        },
-        {
-          "en": "id badge",
-          "vi": "thẻ đeo"
+          "vi": "đồng hồ",
+          "prompts": [
+            "watch"
+          ]
         },
         {
           "en": "headphones",
-          "vi": "tai nghe"
+          "vi": "tai nghe",
+          "prompts": [
+            "headphones",
+            "headset"
+          ]
+        },
+        {
+          "en": "lanyard",
+          "vi": "thẻ đeo",
+          "prompts": [
+            "lanyard"
+          ]
         }
       ]
     },
@@ -192,7 +119,10 @@
       "items": [
         {
           "en": "cell phone",
-          "vi": "điện thoại"
+          "vi": "điện thoại",
+          "prompts": [
+            "cell phone"
+          ]
         }
       ]
     },
@@ -204,71 +134,38 @@
       "items": [
         {
           "en": "knife",
-          "vi": "dao"
-        },
-        {
-          "en": "kitchen knife",
-          "vi": "dao bếp"
-        },
-        {
-          "en": "pocket knife",
-          "vi": "dao gấp"
-        },
-        {
-          "en": "machete",
-          "vi": "mã tấu"
-        },
-        {
-          "en": "sword",
-          "vi": "kiếm"
-        },
-        {
-          "en": "axe",
-          "vi": "rìu"
+          "vi": "dao",
+          "prompts": [
+            "knife"
+          ]
         },
         {
           "en": "gun",
-          "vi": "súng"
-        },
-        {
-          "en": "handgun",
-          "vi": "súng ngắn"
-        },
-        {
-          "en": "rifle",
-          "vi": "súng trường"
-        },
-        {
-          "en": "shotgun",
-          "vi": "súng săn"
+          "vi": "súng",
+          "prompts": [
+            "gun"
+          ]
         },
         {
           "en": "baseball bat",
-          "vi": "gậy bóng chày"
+          "vi": "gậy",
+          "prompts": [
+            "baseball bat"
+          ]
         },
         {
-          "en": "crowbar",
-          "vi": "xà beng"
-        },
-        {
-          "en": "baton",
-          "vi": "dùi cui"
-        },
-        {
-          "en": "hammer",
-          "vi": "búa"
+          "en": "axe",
+          "vi": "rìu",
+          "prompts": [
+            "axe"
+          ]
         },
         {
           "en": "scissors",
-          "vi": "kéo"
-        },
-        {
-          "en": "taser",
-          "vi": "súng điện"
-        },
-        {
-          "en": "slingshot",
-          "vi": "ná cao su"
+          "vi": "kéo",
+          "prompts": [
+            "scissors"
+          ]
         }
       ]
     },
@@ -280,51 +177,38 @@
       "items": [
         {
           "en": "jacket",
-          "vi": "áo khoác"
-        },
-        {
-          "en": "coat",
-          "vi": "áo choàng"
-        },
-        {
-          "en": "hoodie",
-          "vi": "áo hoodie"
-        },
-        {
-          "en": "sweater",
-          "vi": "áo len"
+          "vi": "áo khoác",
+          "prompts": [
+            "jacket"
+          ]
         },
         {
           "en": "shirt",
-          "vi": "áo sơ mi"
-        },
-        {
-          "en": "t-shirt",
-          "vi": "áo phông"
-        },
-        {
-          "en": "dress",
-          "vi": "váy"
+          "vi": "áo",
+          "prompts": [
+            "shirt"
+          ]
         },
         {
           "en": "trousers",
-          "vi": "quần dài"
-        },
-        {
-          "en": "jeans",
-          "vi": "quần jean"
-        },
-        {
-          "en": "shorts",
-          "vi": "quần short"
+          "vi": "quần",
+          "prompts": [
+            "trousers"
+          ]
         },
         {
           "en": "shoes",
-          "vi": "giày"
+          "vi": "giày",
+          "prompts": [
+            "shoes"
+          ]
         },
         {
           "en": "hair",
-          "vi": "tóc"
+          "vi": "tóc",
+          "prompts": [
+            "hair"
+          ]
         }
       ]
     }

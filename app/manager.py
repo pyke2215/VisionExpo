@@ -1,4 +1,4 @@
-"""Owns camera workers and the shared YOLO-World service; applies settings changes."""
+"""Owns camera workers and the shared object detector (WorldService); applies settings changes."""
 
 from __future__ import annotations
 

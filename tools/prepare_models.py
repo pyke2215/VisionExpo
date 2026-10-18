@@ -1,4 +1,4 @@
-"""Download / copy all weights into models/ and bake the YOLO-World vocabulary so the app runs offline.
+"""Download / copy all weights into models/ and bake the object vocabulary so the app runs offline.
 
 Run once on a machine with internet:  python tools/prepare_models.py [--device 0|cpu] [--skip-world]
 """
@@ -21,7 +21,7 @@ from app.paths import (  # noqa: E402
     WORLD_BAKED_MODEL,
     WORLD_BASE_MODEL,
 )
-from app.vocabulary import flatten_classes, load_vocabulary  # noqa: E402
+from app.vocabulary import class_prompts, flatten_classes, load_vocabulary  # noqa: E402
 
 PRODUCTION_MODELS = ROOT.parent / "Production" / "models"
 
@@ -43,20 +43,19 @@ def ensure_person_model() -> None:
 
 
 def ensure_world(device: str) -> None:
-    from ultralytics import YOLOWorld
+    from app.world import _model_class, bake_vocabulary
 
     base = MODELS_DIR / WORLD_BASE_MODEL
     if not base.is_file():
-        YOLOWorld(WORLD_BASE_MODEL)
+        _model_class(WORLD_BASE_MODEL)(WORLD_BASE_MODEL)
         print(f"[ok] downloaded {base.name}")
     else:
         print(f"[ok] {base.name} already present")
 
-    from app.world import bake_vocabulary
-
-    classes = flatten_classes(load_vocabulary(VOCABULARY_FILE))
-    print(f"[..] encoding {len(classes)} words with CLIP (first run downloads CLIP ViT-B/32 ~340 MB)")
-    model = bake_vocabulary(classes, device=device)
+    doc = load_vocabulary(VOCABULARY_FILE)
+    classes = flatten_classes(doc)
+    print(f"[..] encoding {len(classes)} classes (first run downloads the text encoder, MobileCLIP ~240 MB)")
+    model = bake_vocabulary(classes, class_prompts(doc), device=device)
     names = model.names if isinstance(model.names, dict) else dict(enumerate(model.names))
     print(f"[ok] baked {len(names)} classes -> {MODELS_DIR / WORLD_BAKED_MODEL}")
 

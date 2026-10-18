@@ -20,10 +20,12 @@ function renderHeader(withControls = false) {
   const status = cfg.enabled ? info.status : "off";
   $("wStatus").textContent = { ready: "Sẵn sàng", loading: "Đang tải model", building: "Đang build từ vựng", error: "Lỗi", idle: "Chưa tải", off: "Tắt" }[status] || status;
   $("wStatus").className = `badge ${status}`;
+  const clip = info.clip || {};
   $("wInfo").textContent =
     `${info.vocabulary_classes} từ trong từ vựng · ${info.vocabulary_classes - disabled.size} đang bật` +
     (info.model_classes ? ` · model đã nạp ${info.model_classes} lớp` : "") +
     (info.last_infer_ms ? ` · ${info.last_infer_ms} ms/lần` : "") +
+    (info.config?.clip_verify ? ` · CLIP ${clip.status || "…"}${clip.last_ms ? ` ${clip.last_ms} ms` : ""}` : "") +
     (info.error ? ` · ${info.error}` : "");
   if (!withControls) return;
   $("conf").value = cfg.conf;
@@ -42,18 +44,26 @@ function renderHeader(withControls = false) {
   $("imgsz").value = cfg.imgsz;
   $("attach").checked = cfg.attach_to_person !== false;
   $("scope").value = cfg.scope || "person";
-  $("cropMargin").value = Math.round((cfg.crop_margin ?? 0.15) * 100);
-  $("maxPersons").value = cfg.max_persons ?? 8;
+  $("personMargin").value = Math.round((cfg.person_margin ?? 0.1) * 100);
+  $("minPersonPx").value = cfg.min_person_px ?? 60;
+  $("clipVerify").checked = !!cfg.clip_verify;
+  $("clipMin").value = cfg.clip_min ?? 0.22;
+  $("clipMinVal").textContent = Number(cfg.clip_min ?? 0.22).toFixed(2);
   syncScope();
+  syncClip();
 }
 
 function syncScope() {
   const perPerson = $("scope").value === "person";
   $("marginWrap").classList.toggle("hidden", !perPerson);
-  $("maxPersonsWrap").classList.toggle("hidden", !perPerson);
+  $("minPersonWrap")?.classList.toggle("hidden", !perPerson);
   $("smoothRow").classList.toggle("hidden", !perPerson);
   $("smoothHint").classList.toggle("hidden", !perPerson);
   $("attachWrap").classList.toggle("hidden", perPerson);
+}
+
+function syncClip() {
+  $("clipMinWrap").classList.toggle("hidden", !$("clipVerify").checked);
 }
 
 function catConf(id) {
@@ -89,7 +99,10 @@ function renderCats() {
         <div class="chips">${items
           .map((it) => {
             const on = !disabled.has(it.en.toLowerCase());
-            return `<span class="chip ${on ? "on" : ""}" data-en="${esc(it.en)}" title="${esc(it.en)}">${esc(it.en)}<span class="vi">${esc(it.vi || "")}</span>${
+            const prompts = it.prompts && it.prompts.length ? it.prompts : [it.en];
+            return `<span class="chip ${on ? "on" : ""}" data-en="${esc(it.en)}" title="Từ khóa cho model: ${esc(prompts.join(", "))}">${esc(it.en)}${
+              prompts.length > 1 ? `<span class="muted"> +${prompts.length - 1}</span>` : ""
+            }<span class="vi">${esc(it.vi || "")}</span>${
               custom ? `<span class="x" data-del="${esc(it.en)}">×</span>` : ""
             }</span>`;
           })
@@ -216,9 +229,10 @@ $("btnAddWords").onclick = () => {
   const existing = new Set(cats.flatMap((c) => c.items.map((it) => it.en.toLowerCase())));
   let added = 0;
   for (const line of lines) {
-    const [en, vi] = line.split("|").map((s) => (s || "").trim());
+    const [en, vi, extra] = line.split("|").map((s) => (s || "").trim());
     if (!en || existing.has(en.toLowerCase())) continue;
-    custom.items.push({ en: en.toLowerCase(), vi: vi || en });
+    const prompts = [en, ...(extra || "").split(",")].map((s) => s.trim().toLowerCase()).filter(Boolean);
+    custom.items.push({ en: en.toLowerCase(), vi: vi || en, prompts: [...new Set(prompts)] });
     existing.add(en.toLowerCase());
     added++;
   }
@@ -238,14 +252,17 @@ bindNumber("confirmHits", "confirm_hits");
 bindNumber("alertHits", "alert_hits");
 bindNumber("dropMisses", "drop_misses");
 $("rejectStatic").onchange = () => putWorld({ reject_static: $("rejectStatic").checked });
+$("clipVerify").onchange = () => { syncClip(); putWorld({ clip_verify: $("clipVerify").checked }); };
+$("clipMin").oninput = () => ($("clipMinVal").textContent = Number($("clipMin").value).toFixed(2));
+$("clipMin").onchange = () => putWorld({ clip_min: Number($("clipMin").value) });
 bindNumber("minObjPx", "min_obj_px");
 bindNumber("labelMargin", "label_margin");
 bindNumber("everyN", "every_n");
 $("imgsz").onchange = () => putWorld({ imgsz: Number($("imgsz").value) });
 $("attach").onchange = () => putWorld({ attach_to_person: $("attach").checked });
 $("scope").onchange = () => { syncScope(); putWorld({ scope: $("scope").value }); };
-bindNumber("cropMargin", "crop_margin", 0.01);
-bindNumber("maxPersons", "max_persons");
+bindNumber("personMargin", "person_margin", 0.01);
+bindNumber("minPersonPx", "min_person_px");
 $("search").oninput = renderCats;
 $("btnAllOn").onclick = () => { disabled.clear(); renderCats(); queueSave(); };
 $("btnAllOff").onclick = () => {
@@ -259,7 +276,7 @@ setInterval(async () => {
   try {
     const s = await api("/api/status");
     const w = s.world;
-    info = { ...info, status: w.status, error: w.error, model_classes: w.model_classes, last_infer_ms: w.last_infer_ms, vocabulary_classes: w.vocabulary_classes };
+    info = { ...info, status: w.status, error: w.error, model_classes: w.model_classes, last_infer_ms: w.last_infer_ms, vocabulary_classes: w.vocabulary_classes, clip: w.clip };
     renderHeader();
     $("metaInfo").textContent = `device ${s.device}`;
   } catch { /* ignore */ }

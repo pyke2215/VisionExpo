@@ -19,7 +19,7 @@ class Person:
     conf: float
     keypoints: np.ndarray | None = None  # (17, 3) x, y, conf
     side: str = "unknown"  # crossing side: "in" | "out" | "unknown"
-    items: list[str] = field(default_factory=list)  # YOLO-World labels attached to this person
+    items: list[str] = field(default_factory=list)  # object labels attached to this person
     alert: bool = False  # carries an item from an alert category (weapons)
 
     def foot_point(self) -> tuple[float, float]:

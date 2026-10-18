@@ -95,7 +95,10 @@ def render(
         x1, y1, x2, y2 = (int(v) for v in obj.box)
         oc = ALERT_COLOR if obj.alert else OBJ_COLOR
         cv2.rectangle(img, (x1, y1), (x2, y2), oc, thick + (1 if obj.alert else 0))
-        _label(img, f"{obj.label} {obj.conf:.2f}", (x1, y1), oc, 0.45 * scale)
+        tag = f"{obj.label} {obj.conf:.2f}"
+        if obj.clip is not None:
+            tag += f"|{obj.clip:.2f}"
+        _label(img, tag, (x1, y1), oc, 0.45 * scale)
 
     for p in persons:
         color = ALERT_COLOR if p.alert else SIDE_COLORS.get(p.side, SIDE_COLORS["unknown"])

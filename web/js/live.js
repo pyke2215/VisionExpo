@@ -151,7 +151,7 @@ async function poll() {
     $("kAlert").textContent = s.totals.alerts || 0;
     $("kAlertBox").classList.toggle("active", (s.totals.alerts || 0) > 0);
     const w = s.world;
-    $("worldState").textContent = w.enabled ? `YOLO-World: ${w.status}${w.error ? " – " + w.error : ""} · ${w.last_infer_ms} ms` : "YOLO-World đang tắt";
+    $("worldState").textContent = w.enabled ? `Đồ vật: ${w.status}${w.error ? " – " + w.error : ""} · ${w.last_infer_ms} ms` : "Nhận diện đồ vật đang tắt";
     $("metaInfo").textContent = `device ${s.device} · ${runningCams().length}/${s.cameras.length} camera`;
     if (before !== after || !stage.querySelector("img")) renderStage();
     renderList();

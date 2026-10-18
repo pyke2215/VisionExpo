@@ -1,12 +1,15 @@
-"""Shared YOLO-World open-vocabulary detector.
+"""Shared open-vocabulary object detector (YOLOE, or YOLO-World when WORLD_BASE_MODEL is a -world model).
 
-The vocabulary is baked into models/yolo_world_exhibition.pt (text embeddings pre-computed with CLIP),
-so the exhibition machine runs offline without CLIP. Enabling/disabling single classes only filters
-predictions (`classes=`), no re-encoding needed. Adding new words triggers a rebuild that needs CLIP.
+The vocabulary is baked into models/<WORLD_BAKED_MODEL>: each class embedding is the average of the text
+embeddings of its prompts (synonyms), pre-computed once with the model's text encoder (MobileCLIP for YOLOE,
+CLIP for YOLO-World), so the exhibition machine runs offline. A sidecar .json records what was baked; a
+different vocabulary or base model triggers a rebuild, which needs the text encoder (internet the first time).
+Enabling/disabling single classes only filters predictions (`classes=`), no re-encoding needed.
 """
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import dataclass
@@ -16,6 +19,7 @@ import numpy as np
 from .paths import MODELS_DIR, VOCABULARY_FILE, WORLD_BAKED_MODEL, WORLD_BASE_MODEL, resolve_model
 from .vocabulary import (
     alert_labels,
+    class_prompts,
     flatten_classes,
     label_categories,
     load_vocabulary,
@@ -27,6 +31,7 @@ from .vocabulary import (
 DEDUP_IOU = 0.6
 SUPPRESS_IOU = 0.7  # a hidden clothing box must overlap this much to absorb an accessory guess
 HIDDEN_CONF = 0.15  # hidden labels (hair, clothing) only count as evidence against look-alikes, so accept them low
+BAKED_META = (MODELS_DIR / WORLD_BAKED_MODEL).with_suffix(".json")
 
 
 @dataclass
@@ -35,10 +40,11 @@ class WorldObject:
     conf: float
     box: tuple[float, float, float, float]
     alert: bool = False
-    owner: int | None = None  # track id of the person whose crop produced this object
+    owner: int | None = None  # track id of the person carrying this object
     rel: tuple[float, float, float, float] | None = None  # box relative to the owner's box (0..1 of its w/h)
     category: str = ""
     hidden: bool = False  # suppress category (clothing / hair): evidence against look-alikes, never shown
+    clip: float | None = None  # CLIP crop–label similarity when clip_verify is on
 
 
 def _iou(a, b) -> float:
@@ -52,42 +58,51 @@ def _iou(a, b) -> float:
     return inter / max(1e-6, area_a + area_b - inter)
 
 
-MIN_OWNER_COVER = 0.3
+def _is_yoloe(name: str) -> bool:
+    return "yoloe" in str(name).lower()
 
 
-def _best_owner(box, persons):
-    """Person whose box covers the largest fraction of `box`; ties go to the nearest box center."""
-    area = max(1e-6, (box[2] - box[0]) * (box[3] - box[1]))
-    cx, cy = (box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0
-    best, best_key = None, None
-    for p in persons:
-        x1, y1, x2, y2 = p.box
-        inter = max(0.0, min(box[2], x2) - max(box[0], x1)) * max(0.0, min(box[3], y2) - max(box[1], y1))
-        cover = inter / area
-        if cover < MIN_OWNER_COVER:
-            continue
-        dist = ((cx - (x1 + x2) / 2.0) / max(1.0, x2 - x1)) ** 2 + ((cy - (y1 + y2) / 2.0) / max(1.0, y2 - y1)) ** 2
-        key = (round(cover, 2), -dist)
-        if best_key is None or key > best_key:
-            best, best_key = p, key
-    return best
+def _model_class(name: str):
+    from ultralytics import YOLOE, YOLOWorld
+
+    return YOLOE if _is_yoloe(name) else YOLOWorld
 
 
-def bake_vocabulary(classes: list[str], device: str = "0", base: str = WORLD_BASE_MODEL):
-    """Encode `classes` with CLIP into a YOLO-World model and save it; returns the loaded model."""
-    from ultralytics import YOLOWorld
+def _signature(classes: list[str], prompts: dict[str, list[str]], base: str = WORLD_BASE_MODEL) -> dict:
+    return {"base": base, "classes": [[c, prompts.get(c) or [c]] for c in classes]}
 
-    model = YOLOWorld(str(resolve_model(base)))
+
+def bake_vocabulary(classes: list[str], prompts: dict[str, list[str]], device: str = "0", base: str = WORLD_BASE_MODEL):
+    """Average each class's prompt embeddings into the base model, save it; returns the loaded baked model."""
+    import torch
+
+    cls = _model_class(base)
+    model = cls(str(resolve_model(base)))
     try:
         model.to("cuda" if device not in ("cpu", "") and _cuda_ok() else "cpu")
     except Exception:  # noqa: BLE001
         pass
-    model.set_classes(list(classes))
-    model.model.clip_model = None  # keep the saved file small; embeddings already in txt_feats
+    flat = [p for c in classes for p in prompts.get(c) or [c]]
+    pe = model.get_text_pe(flat) if _is_yoloe(base) else model.model.get_text_pe(flat)  # (1, prompts, dim)
+    feats, i = [], 0
+    for c in classes:
+        n = len(prompts.get(c) or [c])
+        v = pe[:, i:i + n].mean(dim=1)
+        feats.append(v / v.norm(dim=-1, keepdim=True))
+        i += n
+    emb = torch.stack(feats, dim=1)
+    if _is_yoloe(base):
+        model.set_classes(list(classes), emb)
+    else:
+        model.model.txt_feats = emb.to(next(model.model.parameters()).device)
+        model.model.model[-1].nc = len(classes)
+        model.model.names = list(classes)
+        model.model.clip_model = None  # keep the saved file small; embeddings already in txt_feats
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     out = MODELS_DIR / WORLD_BAKED_MODEL
     model.save(str(out))
-    return YOLOWorld(str(out))
+    BAKED_META.write_text(json.dumps(_signature(classes, prompts, base), ensure_ascii=False, indent=1), encoding="utf-8")
+    return cls(str(out))
 
 
 def _cuda_ok() -> bool:
@@ -101,22 +116,32 @@ def _cuda_ok() -> bool:
 
 class WorldService:
     def __init__(self, cfg: dict, device: str = "0") -> None:
+        from .clip_verify import ClipVerifier
+
         self.cfg = dict(cfg)
         self.device = device
         self.model = None
         self.status = "idle"  # idle | loading | ready | building | error
         self.error: str | None = None
-        self.vocab_doc = load_vocabulary(VOCABULARY_FILE)
-        self.classes: list[str] = flatten_classes(self.vocab_doc)
-        self.vi = vi_labels(self.vocab_doc)
-        self.alerts = alert_labels(self.vocab_doc)
-        self.suppress = suppress_labels(self.vocab_doc)
-        self.categories = label_categories(self.vocab_doc)
+        self.clip = ClipVerifier()
+        self._set_vocabulary(load_vocabulary(VOCABULARY_FILE))
         self._infer_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self.last_infer_ms = 0.0
         if self.cfg.get("enabled"):
             self.ensure_loaded_async()
+        if self.cfg.get("clip_verify"):
+            self.clip.ensure_loaded_async(self.device)
+
+    def _set_vocabulary(self, doc: dict) -> None:
+        self.vocab_doc = doc
+        self.classes: list[str] = flatten_classes(doc)
+        self.prompts = class_prompts(doc)
+        self.vi = vi_labels(doc)
+        self.alerts = alert_labels(doc)
+        self.suppress = suppress_labels(doc)
+        self.categories = label_categories(doc)
+        self.clip.set_vocabulary(self.prompts)
 
     # ---------- config ----------
     @property
@@ -127,6 +152,9 @@ class WorldService:
         self.cfg = dict(cfg)
         if self.enabled:
             self.ensure_loaded_async()
+        if self.cfg.get("clip_verify"):
+            self.clip.ensure_loaded_async(self.device)
+            self.clip.set_vocabulary(self.prompts)
 
     def disabled_set(self) -> set[str]:
         return {str(c).lower() for c in self.cfg.get("disabled_classes") or []}
@@ -155,48 +183,47 @@ class WorldService:
             self.status = "loading"
         threading.Thread(target=self._load, name="world-load", daemon=True).start()
 
+    def _baked_is_current(self) -> bool:
+        try:
+            meta = json.loads(BAKED_META.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return meta == json.loads(json.dumps(_signature(self.classes, self.prompts)))
+
     def _load(self) -> None:
         try:
-            from ultralytics import YOLOWorld
-
             baked = MODELS_DIR / WORLD_BAKED_MODEL
             model = None
             if baked.is_file():
-                model = YOLOWorld(str(baked))
-                names = list(model.names.values()) if isinstance(model.names, dict) else list(model.names)
-                if [n.lower() for n in names] != self.classes:
+                model = _model_class(WORLD_BASE_MODEL)(str(baked))
+                if not self._baked_is_current():
                     print("[world] baked vocabulary differs from config/vocabulary.json, rebuilding…")
                     try:
-                        model = bake_vocabulary(self.classes, self.device)
+                        model = bake_vocabulary(self.classes, self.prompts, self.device)
                     except Exception as exc:  # noqa: BLE001
                         print(f"[world] rebuild failed ({exc}); keeping baked vocabulary")
             else:
-                print("[world] no baked model, building from base model (needs CLIP + internet once)…")
-                model = bake_vocabulary(self.classes, self.device)
+                print(f"[world] no baked model, building from {WORLD_BASE_MODEL} (needs the text encoder + internet once)…")
+                model = bake_vocabulary(self.classes, self.prompts, self.device)
             self.model = model
             self.status = "ready"
             self.error = None
-            print(f"[world] ready with {len(self._model_names())} classes")
+            print(f"[world] ready with {len(self._model_names())} classes ({WORLD_BASE_MODEL})")
         except Exception as exc:  # noqa: BLE001
             self.status = "error"
             self.error = str(exc)
             print(f"[world] load failed: {exc}")
 
     def rebuild_async(self, vocab_doc: dict) -> None:
-        """Save new vocabulary and re-encode it in the background (needs CLIP)."""
+        """Save new vocabulary and re-encode it in the background (needs the text encoder)."""
         save_vocabulary(VOCABULARY_FILE, vocab_doc)
-        self.vocab_doc = vocab_doc
-        self.classes = flatten_classes(vocab_doc)
-        self.vi = vi_labels(vocab_doc)
-        self.alerts = alert_labels(vocab_doc)
-        self.suppress = suppress_labels(vocab_doc)
-        self.categories = label_categories(vocab_doc)
+        self._set_vocabulary(vocab_doc)
         with self._state_lock:
             self.status = "building"
 
         def run() -> None:
             try:
-                model = bake_vocabulary(self.classes, self.device)
+                model = bake_vocabulary(self.classes, self.prompts, self.device)
                 with self._infer_lock:
                     self.model = model
                 self.status = "ready"
@@ -252,7 +279,7 @@ class WorldService:
         hidden = [HIDDEN_CONF] if self.suppress - self.disabled_set() else []
         return min([base, float(self.cfg.get("alert_conf", base)), *self._category_conf().values(), *hidden])
 
-    def _objects(self, res, dx: float = 0.0, dy: float = 0.0) -> list[WorldObject]:
+    def _objects(self, res) -> list[WorldObject]:
         boxes = res.boxes
         if boxes is None or len(boxes) == 0:
             return []
@@ -271,7 +298,7 @@ class WorldService:
                 WorldObject(
                     label=label,
                     conf=float(s),
-                    box=(float(b[0]) + dx, float(b[1]) + dy, float(b[2]) + dx, float(b[3]) + dy),
+                    box=(float(b[0]), float(b[1]), float(b[2]), float(b[3])),
                     alert=alert,
                     category=self.categories.get(key, ""),
                     hidden=key in self.suppress,
@@ -280,22 +307,18 @@ class WorldService:
         return out
 
     def _dedup(self, found: list[WorldObject], keep_rivals: bool = False) -> list[WorldObject]:
-        """Keep the most confident box per region and owner.
+        """Keep the most confident box per region.
 
-        Same object seen by several crops, or one region given several synonyms (handbag / tote bag) on the
-        same person, collapses to one box.
         keep_rivals=False (frame scope): one box per region; a hidden clothing box absorbs weaker accessory
             guesses it covers, then hidden labels are dropped.
-        keep_rivals=True (person scope): only boxes of the same category collapse; rival categories on one
-            region (hat vs hair, knife vs phone) and hidden labels are kept for ItemTracker to arbitrate.
+        keep_rivals=True (person scope): only boxes of the same class collapse; rival classes on one region
+            (hat vs hair, knife vs phone) and hidden labels are kept for ItemTracker to arbitrate.
         """
         found.sort(key=lambda o: o.conf, reverse=True)
         kept: list[WorldObject] = []
         for o in found:
             dup = False
             for k in kept:
-                if k.owner != o.owner and k.label != o.label:
-                    continue
                 if keep_rivals and k.label != o.label and k.category != o.category:
                     continue
                 iou = _iou(k.box, o.box)
@@ -306,56 +329,15 @@ class WorldService:
                 kept.append(o)
         return kept if keep_rivals else [o for o in kept if not o.hidden]
 
-    def detect(self, frame: np.ndarray) -> list[WorldObject]:
-        """Whole-frame detection (scope = "frame")."""
+    def detect(self, frame: np.ndarray, keep_rivals: bool = False) -> list[WorldObject]:
+        """Whole-frame detection; the model letterboxes the frame to `imgsz` itself."""
         results = self._predict([frame])
-        return self._dedup(self._objects(results[0])) if results else []
-
-    def detect_in_persons(self, frame: np.ndarray, persons) -> tuple[list[WorldObject], set[int]]:
-        """Detect only inside (slightly enlarged) crops of tracked persons; each object is owned by that person.
-
-        Returns the objects and the track ids whose crops were examined (others were too small / over the limit).
-        """
-        h, w = frame.shape[:2]
-        margin = float(self.cfg.get("crop_margin", 0.1))
-        min_px = float(self.cfg.get("min_person_px", 60))
-        max_n = int(self.cfg.get("max_persons", 8))
-        cands = [
-            p for p in persons
-            if p.track_id is not None and (p.box[3] - p.box[1]) >= min_px
-        ]
-        cands.sort(key=lambda p: (p.box[2] - p.box[0]) * (p.box[3] - p.box[1]), reverse=True)
-        cands = cands[:max_n]
-
-        crops, origins, owners = [], [], []
-        for p in cands:
-            x1, y1, x2, y2 = p.box
-            mx, my = (x2 - x1) * margin, (y2 - y1) * margin * 0.5
-            cx1, cy1 = int(max(0, x1 - mx)), int(max(0, y1 - my))
-            cx2, cy2 = int(min(w, x2 + mx)), int(min(h, y2 + my))
-            if cx2 - cx1 < 8 or cy2 - cy1 < 8:
-                continue
-            crops.append(np.ascontiguousarray(frame[cy1:cy2, cx1:cx2]))
-            origins.append((cx1, cy1))
-            owners.append(p)
-
-        results = self._predict(crops)
         if not results:
-            return [], set()
-        found: list[WorldObject] = []
-        for res, (ox, oy) in zip(results, origins):
-            for o in self._objects(res, ox, oy):
-                # A crop may include a neighbour: give the object to the person covering it most.
-                p = _best_owner(o.box, owners)
-                if p is None:
-                    continue
-                px1, py1, px2, py2 = p.box
-                pw, ph = max(1.0, px2 - px1), max(1.0, py2 - py1)
-                o.owner = p.track_id
-                o.rel = ((o.box[0] - px1) / pw, (o.box[1] - py1) / ph, (o.box[2] - px1) / pw, (o.box[3] - py1) / ph)
-                found.append(o)
-
-        return self._dedup(found, keep_rivals=True), {p.track_id for p in owners}
+            return []
+        found = self._dedup(self._objects(results[0]), keep_rivals)
+        if self.cfg.get("clip_verify") and found:
+            found = self.clip.filter(frame, found, float(self.cfg.get("clip_min", 0.22)))
+        return found
 
     def info(self) -> dict:
         return {
@@ -363,11 +345,13 @@ class WorldService:
             "status": self.status,
             "error": self.error,
             "scope": self.scope,
+            "base_model": WORLD_BASE_MODEL,
             "model_classes": len(self._model_names()) if self.model is not None else 0,
             "vocabulary_classes": len(self.classes),
             "alert_labels": sorted(self.alerts),
             "suppress_labels": sorted(self.suppress),
             "category_conf": self._category_conf(),
             "last_infer_ms": round(self.last_infer_ms, 1),
+            "clip": self.clip.info(),
             "config": self.cfg,
         }

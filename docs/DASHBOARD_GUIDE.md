@@ -7,11 +7,11 @@ Dashboard mở tại `http://127.0.0.1:8000/` (máy khác trong LAN: `http://<IP
 | Live | `/` | Xem camera trực tiếp, số người, đồ vật, cảnh báo |
 | Cameras | `/cameras` | Thêm / sửa / tắt / xóa camera |
 | Line / Vùng | `/calibrate` | Vẽ line hoặc vùng để biết người ở trong hay ngoài, đếm lượt vào/ra |
-| YOLO-World | `/world` | Bật nhận diện đồ vật, chỉnh ngưỡng, chọn từ khóa |
+| Đồ vật | `/world` | Bật nhận diện đồ vật, chỉnh ngưỡng, chọn từ khóa |
 | Dữ liệu | `/data` | Lịch sử, biểu đồ, xuất CSV, cấu hình lưu trữ |
 | Socket | `/socket` | Cấu hình WebSocket gửi dữ liệu cho app khác, theo dõi client |
 
-**Lưu thay đổi:** trang YOLO-World **tự lưu** ngay khi chỉnh (hiện thông báo "Đã lưu"). Các trang khác có nút **Lưu**. Mọi thay đổi áp dụng ngay, không cần khởi động lại app.
+**Lưu thay đổi:** trang Đồ vật **tự lưu** ngay khi chỉnh (hiện thông báo "Đã lưu"). Các trang khác có nút **Lưu**. Mọi thay đổi áp dụng ngay, không cần khởi động lại app.
 
 ---
 
@@ -19,7 +19,7 @@ Dashboard mở tại `http://127.0.0.1:8000/` (máy khác trong LAN: `http://<IP
 
 1. **Cameras** → thêm từng camera, bấm **Kiểm tra** thấy ảnh rồi **Thêm**.
 2. **Line / Vùng** → chọn camera, vẽ vùng (hoặc line), **Lưu**.
-3. **YOLO-World** → bấm **Đang TẮT – bấm để bật**.
+3. **Đồ vật** → bấm **Đang TẮT – bấm để bật**.
 4. **Live** → kiểm tra số người, khung, đồ vật.
 5. (Nếu có app hiển thị) **Socket** → đặt token, gửi URL cho bên làm app.
 
@@ -92,7 +92,7 @@ Mỗi camera có nút **Đang bật / Đang tắt**, **Sửa**, **Line** (mở t
 | Bật camera | Tắt = ngừng đọc camera | |
 | Phát hiện người | Tắt = chỉ xem hình | |
 | Vẽ khung / Vẽ khung xương | Hiển thị trên video | |
-| YOLO-World | Nhận diện đồ vật trên camera này | |
+| Nhận diện đồ vật | Nhận diện đồ vật trên camera này | |
 | Đếm vào/ra | Dùng line/vùng của camera này | |
 
 Đổi **Nguồn** hoặc **Bật camera** sẽ khởi động lại camera; các thông số khác áp dụng ngay.
@@ -137,9 +137,9 @@ Khung **"Bộ đếm camera này"** hiện số đang thấy / trong / ngoài th
 
 ---
 
-## YOLO-World (`/world`) – nhận diện đồ vật
+## Đồ vật (`/world`) – nhận diện đồ vật theo từ khóa
 
-Các thay đổi trên trang này **tự lưu**.
+Các thay đổi trên trang này **tự lưu**. Model YOLOE nhận diện theo từ khóa tiếng Anh, không cần train.
 
 ### Bật / tắt và hiệu năng
 
@@ -147,11 +147,11 @@ Các thay đổi trên trang này **tự lưu**.
 |---|---|---|
 | Nút Đang BẬT / TẮT | Bật nhận diện đồ vật cho toàn hệ thống | |
 | Chạy mỗi N khung hình | Quét đồ vật mỗi N khung (khung người vẫn cập nhật mỗi khung) | 3. Máy yếu / nhiều camera: 4–6 |
-| imgsz | Kích thước ảnh cho model đồ vật | 640 |
-| Phạm vi tìm | **Trong người** (chỉ tìm trong khung từng người – chính xác hơn, khuyên dùng) hoặc **Toàn khung** | Trong người |
-| Nới rộng crop (%) | Mở rộng khung người khi tìm để bắt vật cầm tay | 10 |
-| Tối đa người / khung | Giới hạn số người được quét mỗi lần | 8 |
-| Camera dùng YOLO-World | Bật/tắt riêng từng camera | |
+| imgsz | Kích thước ảnh cả khung đưa vào model đồ vật. Khung 1920×1080 bị thu nhỏ về mức này, vật nhỏ (kính, điện thoại) dễ bị bỏ sót | 960 nếu có GPU; máy yếu 640 |
+| Phạm vi tìm | **Đồ vật người mang** (track vật trên cả khung rồi chỉ giữ vật nằm trên người – khuyên dùng) hoặc **Mọi đồ vật trong khung** (không track, không làm mượt) | Đồ vật người mang |
+| Nới rộng khung người (%) | Vật nằm trong khung người nới rộng thêm chừng này mới tính là người đó mang (bắt vật cầm tay, túi đeo bên hông) | 10 |
+| Bỏ người thấp hơn (px) | Người ở xa có khung thấp hơn mức này không được gán đồ vật | 60 |
+| Camera nhận diện đồ vật | Bật/tắt riêng từng camera | |
 
 ### Ngưỡng
 
@@ -171,13 +171,14 @@ Các thay đổi trên trang này **tự lưu**.
 | Ẩn sau N lần liên tiếp không thấy | Vật biến mất bao lâu thì ẩn | 3 |
 | Độ chênh tối thiểu (×) | Một vùng có nhiều cách đọc (nón / tóc, dao / điện thoại): cách đọc dẫn đầu phải hơn cách đọc thứ hai N lần mới hiện. 1 = tắt | 1.5 |
 | Bỏ vật nhỏ hơn (px) | Vật quá nhỏ trên ảnh thường là nhận nhầm | 14 |
-| Bỏ vật đứng yên khi người di chuyển | Loại đồ trên bàn, kệ, móc treo bị gán nhầm cho người đi ngang | Bật |
+| Bỏ vật đứng yên khi người di chuyển | Loại đồ của khung cảnh: vật nằm yên khi không ai mang (balo dưới sàn, túi trên bàn) kể cả khi sau đó có người đứng cạnh, và vật đứng yên trong khi người đi ngang. Vật được nhặt lên mang đi thì hiện lại | Bật |
 
 ### Từ vựng
 
 - Click một từ để bật/tắt (từ tắt hiển thị mờ). Tick ô nhóm để bật/tắt cả nhóm. **Bật tất cả / Tắt tất cả**. Ô tìm kiếm để lọc.
 - Nhóm **Quần áo & tóc** không bao giờ hiển thị: model vẫn nhận diện để loại các nhận nhầm (thân áo bị đoán là ba lô, tóc bị đoán là nón). Không nên tắt nhóm này.
-- **Thêm từ mới**: mỗi dòng một từ tiếng Anh, có thể kèm tiếng Việt sau dấu `|`, ví dụ `umbrella|ô dù`. Bấm **Thêm & build lại** (vài giây). Từ khóa nên là danh từ tiếng Anh ngắn, cụ thể. Từ tự thêm nằm trong nhóm "Tự thêm", có nút × để xóa.
+- Mỗi loại vật chỉ có một nhãn (`hat` bắt cả mũ lưỡi trai, mũ len…). Rê chuột lên một từ để xem các prompt của nó.
+- **Thêm từ mới**: mỗi dòng một từ tiếng Anh, có thể kèm tiếng Việt và prompt phụ: `nhãn | tiếng Việt | prompt1, prompt2`, ví dụ `umbrella|ô dù`. Bấm **Thêm & build lại** (vài giây). Dùng danh từ tiếng Anh thông dụng nhất; **không thêm từ đồng nghĩa** (thành nhãn riêng hay prompt phụ): đo thực tế cho thấy độ nhạy giảm (ví dụ "glasses" một mình bắt được kính, trộn thêm "sunglasses" thì mất). Từ tự thêm nằm trong nhóm "Tự thêm", có nút × để xóa.
 
 ### Khi nào chỉnh gì
 
@@ -187,9 +188,10 @@ Các thay đổi trên trang này **tự lưu**.
 | Tóc bị nhận là nón / mũ | Tăng "Độ chênh tối thiểu" lên 2, hoặc tăng ngưỡng nhóm Nón & mũ lên 0.5 |
 | Đồ vật thật không hiện | Giảm "Ngưỡng hiển thị", giảm "Hiện khi thấy ≥ N" xuống 1 |
 | Nhãn nhảy liên tục | Tăng "Hiện khi thấy ≥ N", tăng "Độ chênh tối thiểu" |
-| Báo động vũ khí giả | Tăng "Ngưỡng vũ khí" và "Cảnh báo khi thấy ≥ N"; tắt từ hay bị nhầm (scissors, hammer…) |
-| Đồ trên bàn bị gán cho người ngồi cạnh | Giới hạn đã biết: người ngồi yên thì không phân biệt được; giảm "Nới rộng crop" |
-| FPS thấp | Tăng "Chạy mỗi N khung", giảm imgsz, giảm "Tối đa người / khung" |
+| Báo động vũ khí giả | Tăng "Ngưỡng vũ khí" và "Cảnh báo khi thấy ≥ N"; tắt từ hay bị nhầm (scissors, baseball bat…) |
+| Đồ trên bàn bị gán cho người ngồi cạnh | Giới hạn đã biết: người đã ngồi yên cạnh vật từ trước thì không phân biệt được; giảm "Nới rộng khung người" |
+| Vật nhỏ trên người ở xa không hiện | Tăng imgsz lên 960 (tốn GPU hơn) |
+| FPS thấp | Tăng "Chạy mỗi N khung", giảm imgsz |
 
 ---
 

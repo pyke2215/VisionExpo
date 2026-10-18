@@ -346,7 +346,7 @@ def create_app(device: str | None = None) -> FastAPI:
             headers={"Cache-Control": "no-store"},
         )
 
-    # ---------- YOLO-World ----------
+    # ---------- object detector ----------
     @app.get("/api/world")
     def api_world():
         w = manager.world
@@ -360,17 +360,16 @@ def create_app(device: str | None = None) -> FastAPI:
     def api_update_world(payload: dict = Body(...)):
         allowed = {
             "enabled", "conf", "imgsz", "every_n", "disabled_classes", "attach_to_person",
-            "scope", "crop_margin", "max_persons", "min_person_px",
+            "scope", "person_margin", "min_person_px",
             "alert_conf", "confirm_hits", "alert_hits", "drop_misses", "reject_static",
             "category_conf", "min_obj_px", "show_conf", "label_margin",
+            "clip_verify", "clip_min",
         }
         patch = {k: v for k, v in payload.items() if k in allowed}
         if "scope" in patch and patch["scope"] not in ("person", "frame"):
             raise HTTPException(400, "scope must be 'person' or 'frame'")
-        if "crop_margin" in patch:
-            patch["crop_margin"] = float(min(max(float(patch["crop_margin"]), 0.0), 0.5))
-        if "max_persons" in patch:
-            patch["max_persons"] = int(min(max(int(patch["max_persons"]), 1), 32))
+        if "person_margin" in patch:
+            patch["person_margin"] = float(min(max(float(patch["person_margin"]), 0.0), 0.5))
         if "min_person_px" in patch:
             patch["min_person_px"] = int(min(max(int(patch["min_person_px"]), 16), 400))
         for key in ("conf", "alert_conf"):
@@ -387,6 +386,10 @@ def create_app(device: str | None = None) -> FastAPI:
             patch["drop_misses"] = int(min(max(int(patch["drop_misses"]), 1), 5))
         if "reject_static" in patch:
             patch["reject_static"] = bool(patch["reject_static"])
+        if "clip_verify" in patch:
+            patch["clip_verify"] = bool(patch["clip_verify"])
+        if "clip_min" in patch:
+            patch["clip_min"] = float(min(max(float(patch["clip_min"]), 0.05), 0.5))
         if "min_obj_px" in patch:
             patch["min_obj_px"] = int(min(max(int(patch["min_obj_px"]), 0), 100))
         if "category_conf" in patch:

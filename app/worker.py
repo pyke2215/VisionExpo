@@ -1,4 +1,4 @@
-"""One thread per camera: latest frame, person tracking, crossing count, YOLO-World, overlay, JPEG."""
+"""One thread per camera: latest frame, person tracking, crossing count, object detection, overlay, JPEG."""
 
 from __future__ import annotations
 
@@ -310,8 +310,7 @@ class CameraWorker:
             every_n = max(1, int(self.world.cfg.get("every_n", 3)))
             if self._world_tick % every_n == 0:
                 if per_person:
-                    found, examined = self.world.detect_in_persons(frame, persons)
-                    self.items.update(found, examined, persons, self.world.cfg)
+                    self.items.update(self.world.detect(frame, keep_rivals=True), persons, self.world.cfg)
                 else:
                     objects = self.world.detect(frame)
             self._world_tick += 1
@@ -341,6 +340,12 @@ class CameraWorker:
         if world_on:
             n_alert = sum(1 for p in persons if p.alert)
             hud.append(f"objects {len(objects)}" + (f"   ALERT {n_alert}" if n_alert else ""))
+            if self.world.cfg.get("clip_verify"):
+                c = self.world.clip
+                hud.append(
+                    f"CLIP {c.status}  keep {c.last_kept} drop {c.last_dropped}"
+                    + (f"  {c.last_ms:.0f}ms" if c.last_ms else "")
+                )
         img = render(
             frame,
             persons=persons,

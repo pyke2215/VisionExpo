@@ -7,3 +7,5 @@ config/settings.json
 config/*.tmp
 models/weights/
 models/*.pt
+models/*.ts
+models/*.json

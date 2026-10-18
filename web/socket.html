@@ -91,10 +91,11 @@
  "people":[{"track_id":27,"side":"in","alert":false,"items":["backpack","glasses"],
             "objects":[{"label":"backpack","vi":"ba lô","category":"bags","conf":0.82,"alert":false,
                         "box":[0.43,0.38,0.51,0.60]},
-                       {"label":"glasses","vi":"kính mắt","category":"face","conf":0.71,"alert":false,
+                       {"label":"glasses","vi":"kính","category":"face","conf":0.71,"alert":false,
                         "box":[0.45,0.31,0.48,0.33]}],
             "conf":0.88,"box":[0.41,0.30,0.52,0.86],"foot":[0.47,0.85]}]}]}
 // side: "in" | "out" | "unknown"; objects = đồ vật đang hiển thị (đã qua ngưỡng hiển thị + làm mượt)
+// label gộp (vd hat, glasses, gun); không gửi trường clip
 
 // events: gửi ngay khi xảy ra
 {"type":"crossing","ts":...,"camera_id":"camera_1","track_id":27,"direction":"in","mode":"zone"}

@@ -106,7 +106,7 @@ Mỗi camera:
               "items":["backpack","glasses"],
               "objects":[{"label":"backpack","vi":"ba lô","category":"bags","conf":0.82,"alert":false,
                           "box":[0.43,0.38,0.51,0.60]},
-                         {"label":"glasses","vi":"kính mắt","category":"face","conf":0.71,"alert":false,
+                         {"label":"glasses","vi":"kính","category":"face","conf":0.71,"alert":false,
                           "box":[0.45,0.31,0.48,0.33]}],
               "conf":0.88,"box":[0.41,0.30,0.52,0.86],"foot":[0.47,0.85]}]}]}
 ```
@@ -130,12 +130,14 @@ Mỗi đồ vật trong `objects`:
 
 | Trường | Kiểu | Ý nghĩa |
 |---|---|---|
-| `label` | string | Nhãn tiếng Anh (khóa ổn định để lập trình) |
+| `label` | string | Nhãn tiếng Anh (khóa ổn định để lập trình). Mỗi loại vật một nhãn gộp (`hat` cũng bắt mũ lưỡi trai / mũ len…) |
 | `vi` | string | Nhãn tiếng Việt để hiển thị |
 | `category` | string | Nhóm (bảng ở mục 5) |
 | `conf` | float | Độ tin cậy đã làm mượt (0–1), luôn ≥ ngưỡng hiển thị của server |
 | `alert` | bool | Thuộc nhóm cảnh báo (vũ khí) |
 | `box` | float[4] | Khung đồ vật `[x1, y1, x2, y2]`, chuẩn hóa 0–1 theo cùng khung hình |
+
+Không có trường `clip` trên WebSocket (điểm CLIP chỉ hiện trên overlay dashboard khi bật chế độ thử nghiệm). App nhận cùng schema field như trước; chỉ **tập giá trị `label`** đã gộp so với bản từ vựng cũ (không còn `cap`, `sunglasses`, `handgun`… riêng lẻ).
 
 Đồ vật trong `objects` đã được server lọc: chỉ những vật thấy ổn định qua nhiều lần quét, đủ ngưỡng hiển thị, không lẫn với tóc/quần áo. App không cần lọc thêm; danh sách này trùng với những gì dashboard vẽ trên khung hình.
 
@@ -225,17 +227,21 @@ Gửi khi một người không còn thấy trong 3 giây. Lượt quá ngắn (
 
 ## 5. Nhóm đồ vật (`category`)
 
-| `category` | Tên hiển thị | Nhãn (`label`) |
-|---|---|---|
-| `headwear` | Nón & mũ | hat, cap, beanie, bucket hat, sun hat, conical hat, helmet, hard hat, headscarf, headband |
-| `face` | Kính & khẩu trang | glasses, sunglasses, goggles, face mask, face shield, balaclava |
-| `bags` | Túi | backpack, handbag, shoulder bag, crossbody bag, waist bag, tote bag, shopping bag, plastic bag, briefcase, suitcase |
-| `accessories` | Phụ kiện | watch, smartwatch, bracelet, necklace, earrings, tie, scarf, belt, gloves, lanyard, id badge, headphones |
-| `devices` | Điện thoại | cell phone |
-| `weapons` | Vũ khí – **`alert: true`** | knife, kitchen knife, pocket knife, machete, sword, axe, gun, handgun, rifle, shotgun, baseball bat, crowbar, baton, hammer, scissors, taser, slingshot |
-| `custom` | Tự thêm | Từ do người vận hành thêm trên dashboard |
+Bộ mặc định hiện tại (vocabulary v3 – mỗi loại một nhãn gộp):
 
-Bộ từ có thể thay đổi trên dashboard (bật/tắt từ, thêm từ). App nên dùng `vi` để hiển thị và `alert` để quyết định cảnh báo, không nên hard-code danh sách nhãn. Quần áo và tóc chỉ dùng nội bộ để lọc nhận nhầm, không bao giờ xuất hiện trong dữ liệu gửi đi.
+| `category` | Tên hiển thị | Nhãn (`label`) | `vi` mặc định |
+|---|---|---|---|
+| `headwear` | Nón & mũ | `hat`, `helmet` | nón / mũ, mũ bảo hiểm |
+| `face` | Kính & khẩu trang | `glasses`, `face mask` | kính, khẩu trang |
+| `bags` | Túi | `backpack`, `handbag`, `shopping bag`, `suitcase` | ba lô, túi xách, túi mua sắm, vali |
+| `accessories` | Phụ kiện | `watch`, `headphones`, `lanyard` | đồng hồ, tai nghe, thẻ đeo |
+| `devices` | Điện thoại | `cell phone` | điện thoại |
+| `weapons` | Vũ khí – **`alert: true`** | `knife`, `gun`, `baseball bat`, `axe`, `scissors` | dao, súng, gậy, rìu, kéo |
+| `custom` | Tự thêm | Từ do người vận hành thêm trên dashboard | theo người thêm |
+
+Nhóm `clothing` (`jacket`, `shirt`, `trousers`, `shoes`, `hair`) chỉ dùng nội bộ để lọc nhận nhầm, **không bao giờ** xuất hiện trong `people` / `status.objects` / sự kiện `alert`.
+
+Bộ từ có thể thay đổi trên dashboard (bật/tắt từ, thêm từ). App nên dùng `vi` để hiển thị và `alert` để quyết định cảnh báo, không hard-code danh sách nhãn. Client cũ hard-code `cap` / `sunglasses` / `handgun`… sẽ không còn thấy các nhãn đó — dùng `hat` / `glasses` / `gun` thay thế.
 
 ## 6. REST API dùng kèm
 

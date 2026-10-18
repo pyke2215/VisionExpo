@@ -57,7 +57,7 @@ function renderNav(active) {
     ["/", "live", "Live"],
     ["/cameras", "cameras", "Cameras"],
     ["/calibrate", "calibrate", "Line / Vùng"],
-    ["/world", "world", "YOLO-World"],
+    ["/world", "world", "Đồ vật"],
     ["/data", "data", "Dữ liệu"],
     ["/socket", "socket", "Socket"],
   ];
