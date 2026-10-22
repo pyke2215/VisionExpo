@@ -15,7 +15,7 @@ from .draw import attach_objects, render
 from .events import EventHub
 from .items import ItemTracker
 from .person import Person, PersonTracker
-from .ppe import PpeFinding, PpeService, expand_box
+from .ppe import KIND_LABELS, MIN_CROP_PX, PpeEvidence, PpeFinding, PpeService, expand_box, part_boxes
 from .world import WorldObject, WorldService
 
 TRACK_END_S = 3.0  # a track unseen this long is considered gone and summarized
@@ -74,7 +74,9 @@ class CameraWorker:
         self.infer_ms = 0.0
         self.persons: list[Person] = []
         self.objects: list[WorldObject] = []
-        self.ppe_findings: list[PpeFinding] = []
+        self.ppe_findings: list[PpeFinding] = []  # model boxes + inferred NO-* (drawn / reported)
+        self._ppe_model: list[PpeFinding] = []  # last model boxes only, reused between PPE runs
+        self._ppe_evidence: dict[int, PpeEvidence] = {}
         self.items = ItemTracker()
         self._world_tick = 0
         self._ppe_tick = 0
@@ -128,6 +130,7 @@ class CameraWorker:
                     "items": sorted(set(p.items)),
                     "alert": p.alert,
                     "ppe_alert": p.ppe_alert,
+                    "ppe": sorted({f.label for f in p.ppe}),
                 }
                 for p in persons
             ],
@@ -164,6 +167,7 @@ class CameraWorker:
                 "kind": f.kind,
                 "conf": round(f.conf, 3),
                 "alert": f.alert,
+                "inferred": f.inferred,
                 "box": norm(f.box),
             })
         people = []
@@ -236,6 +240,7 @@ class CameraWorker:
         self._alerted.pop(tid, None)
         for key in [k for k in self._ppe_alerted if k[0] == tid]:
             self._ppe_alerted.pop(key, None)
+        self._ppe_evidence.pop(tid, None)
         if t is None or t["frames"] < MIN_TRACK_FRAMES:
             return
         self._emit({
@@ -347,9 +352,10 @@ class CameraWorker:
         for p in persons:
             p.ppe = []
             p.ppe_alert = False
+            p.ppe_zone = self._person_in_ppe_zone(p, w, h)
         if not findings:
             return []
-        inside = [p for p in persons if self._person_in_ppe_zone(p, w, h)]
+        inside = [p for p in persons if p.ppe_zone]
         by_id = {p.track_id: p for p in inside}
         kept: list[PpeFinding] = []
         for f in findings:
@@ -374,6 +380,43 @@ class CameraWorker:
                 continue
             kept.append(f)
         return kept
+
+    def _update_evidence(self, persons: list[Person], required: list[str]) -> None:
+        """After a PPE run: per in-zone person and required kind, was the part visible and was a positive found?"""
+        for p in persons:
+            if p.track_id is None or not p.ppe_zone:
+                continue
+            ev = self._ppe_evidence.setdefault(p.track_id, PpeEvidence())
+            scanned = p.box[3] - p.box[1] >= MIN_CROP_PX  # smaller persons are skipped by the crop pass
+            for kind in required:
+                found = [f for f in p.ppe if f.kind == kind and not f.inferred]
+                if any(not f.alert for f in found):
+                    ev.add(kind, "pos")
+                elif found or (scanned and part_boxes(kind, p.keypoints, p.box)):
+                    ev.add(kind, "neg")  # model NO-* box, or part clearly visible with no positive on it
+                else:
+                    ev.add(kind, None)
+
+    def _infer_missing(self, persons: list[Person], required: list[str], confirm_runs: int) -> list[PpeFinding]:
+        """Inferred NO-* for in-zone persons whose evidence confirms a missing item, boxed on current keypoints."""
+        out: list[PpeFinding] = []
+        for p in persons:
+            ev = self._ppe_evidence.get(p.track_id) if p.track_id is not None and p.ppe_zone else None
+            if ev is None:
+                continue
+            for kind in required:
+                if any(f.kind == kind for f in p.ppe):
+                    continue  # the model already reported this kind on the person (positive or NO-*)
+                share = ev.missing(kind, confirm_runs)
+                if share is None:
+                    continue
+                for box in part_boxes(kind, p.keypoints, p.box):
+                    f = PpeFinding(label=KIND_LABELS[kind][1], conf=share, box=box, alert=True, kind=kind,
+                                   owner=p.track_id, inferred=True)
+                    p.ppe.append(f)
+                    p.ppe_alert = True
+                    out.append(f)
+        return out
 
     def _emit_ppe_alerts(self, persons: list[Person], now: float) -> None:
         for p in persons:
@@ -429,7 +472,7 @@ class CameraWorker:
             if self.world.cfg.get("attach_to_person", True):
                 attach_objects(persons, objects)
 
-        ppe_findings = self.ppe_findings
+        ppe_findings = self._ppe_model
         ppe_on = (
             self.ppe_svc is not None
             and self.ppe_svc.enabled
@@ -445,11 +488,15 @@ class CameraWorker:
                 else:
                     found = self.ppe_svc.detect(frame)
                 ppe_findings = self._assign_ppe(found, persons, w, h)
+                self._update_evidence(persons, self.ppe_svc.required)
             else:
                 # Refresh owner flags on current persons from last findings (sides may have changed)
                 ppe_findings = self._assign_ppe(ppe_findings, persons, w, h)
             self._ppe_tick += 1
+            self._ppe_model = ppe_findings
+            ppe_findings = ppe_findings + self._infer_missing(persons, self.ppe_svc.required, self.ppe_svc.confirm_runs)
         else:
+            self._ppe_model = []
             ppe_findings = []
             for p in persons:
                 p.ppe = []

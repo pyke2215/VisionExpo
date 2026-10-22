@@ -66,6 +66,9 @@ GLOBAL_DEFAULTS: dict[str, Any] = {
         "enabled": True,
         "model": PPE_MODEL_DEFAULT,
         "mode": "crop",  # crop = one upscaled crop per in-zone person; frame = single whole-frame pass
+        "infer_missing": True,  # report NO-* when the part is visible on the pose but no positive is found
+        "require": ["hardhat", "gloves"],  # kinds checked by infer_missing
+        "confirm_runs": 3,  # bare in >= N of the last 5 PPE runs (and never positive) → NO-*
         "conf": 0.25,
         "imgsz": 640,
         "every_n": 2,

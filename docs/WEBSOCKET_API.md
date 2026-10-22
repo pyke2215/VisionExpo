@@ -156,6 +156,7 @@ Mỗi phần tử trong `ppe` (chỉ khi vùng camera bật task `ppe`):
 | `box` | float[4] | Khung `[x1,y1,x2,y2]` chuẩn hóa 0–1 |
 
 PPE chỉ gắn người có `side = "in"`. Dương và âm đều gửi; chỉ âm đặt `ppe_alert` / sự kiện `ppe_alert`.
+`inferred` (bool): `true` = `NO-*` do app suy ra (đầu / cổ tay thấy rõ trên khung xương nhưng nhiều lần liền không thấy mũ / găng), `box` lấy từ khung xương; `false` = box của model.
 
 Đổi sang pixel: `x_px = x * frame_size[0]`, `y_px = y * frame_size[1]`.
 

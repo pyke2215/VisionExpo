@@ -124,11 +124,16 @@ flowchart LR
   pred --> map["dời box về tọa độ khung, giữ nếu tâm nằm trong crop của chính người đó"]
   map --> dd["_dedup: cùng kind, IoU≥0.5 → giữ conf cao (Hardhat vs NO-Hardhat)"]
   dd --> asg["worker._assign_ppe: giữ owner nếu vẫn trong vùng; không thì box người nới rộng nhỏ nhất; vô chủ chỉ giữ nếu tâm trong polygon"]
-  asg --> out1["people[].ppe, ppe_alert (WS people)"]
-  asg --> out2["sự kiện ppe_alert (8s / người / tổ hợp)"]
-  asg --> out3["overlay: xanh = có, đỏ = NO-*"]
-  asg --> out4["stats: ppe, ppe_alerts (/api/status)"]
+  asg -->|"chỉ lần chạy PPE"| evd["_update_evidence → PpeEvidence/track: pos | neg (part_boxes thấy, không có dương) | None"]
+  asg --> inf["_infer_missing (mỗi khung): ≥ confirm_runs neg / 5, không pos → NO-* inferred, box từ keypoint hiện tại"]
+  evd --> inf
+  inf --> out1["people[].ppe, ppe_alert (WS people)"]
+  inf --> out2["sự kiện ppe_alert (8s / người / tổ hợp)"]
+  inf --> out3["overlay: xanh = có, đỏ = NO-*"]
+  inf --> out4["stats: ppe, ppe_alerts, people[].ppe (/api/status) → Live: KPI Thiếu PPE, panel PPE, tag người"]
 ```
+
+Vì sao suy ra âm: lớp `NO-Hardhat` của `yolo_ppe.pt` cho < 0.03 với người đầu trần nhìn rõ trên camera triển lãm; lớp dương mới đáng tin. `worker._ppe_model` giữ riêng box model (dùng lại giữa các lần chạy), `worker.ppe_findings` = box model + box suy ra. Bằng chứng xóa khi track kết thúc.
 
 Điều kiện PPE chạy (tất cả phải đúng): `ppe.enabled`, model `ready`, camera `crossing.mode == "zone"`, `"ppe" in tasks`, polygon ≥ 3 điểm, `detect_enabled` (cần người). HUD hiện `PPE off (<status>)` khi camera có task ppe nhưng service chưa sẵn sàng.
 
@@ -141,7 +146,7 @@ flowchart LR
 | `device` | `manager._usable_device` | khởi động (CLI `--device` ghi đè) |
 | `person_model` | `manager` → `PersonTracker` | khởi động |
 | `world.*` | `WorldService.cfg`, `ItemTracker.update(cfg)`, `worker._process` | nóng qua `PUT /api/world` |
-| `ppe.enabled, mode, conf, imgsz, every_n` | `PpeService.cfg`, `worker._process` (`every_n`, `mode`) | nóng qua `PUT /api/ppe` |
+| `ppe.enabled, mode, conf, imgsz, every_n, infer_missing, require, confirm_runs` | `PpeService.cfg` (`.mode`, `.required`, `.confirm_runs`), `worker._process` | nóng qua `PUT /api/ppe` |
 | `ppe.model` | `PpeService._load` | khởi động |
 | `cameras[].source, enabled` | `RESTART_FIELDS` → tạo worker mới | `PUT /api/cameras/{id}` |
 | `cameras[].conf, imgsz, process_fps, stream_width, jpeg_quality, show_*, world_enabled, detect_enabled` | `worker.cfg` | nóng (`apply_config`) |
@@ -188,7 +193,7 @@ Luồng: `worker._emit` → `EventHub.publish` (đồng bộ, trên thread worke
 | `GET/PUT /api/ppe` | `ppe.info()` / `manager.update_ppe` |
 | `/ws` | `WsHub.handle` (topics `status, people, events, tracks`; lọc `cameras`; `token`) |
 
-PPE chưa có giao diện chỉnh trên web (chỉ checkbox task `ppe` ở `/calibrate`); chỉnh ngưỡng qua `PUT /api/ppe`.
+PPE hiển thị trên Live (KPI "Thiếu PPE", panel "PPE trong vùng" khi camera đang xem có task ppe, tag "Thiếu mũ / găng" ở danh sách người). Chưa có giao diện chỉnh cấu hình PPE (chỉ checkbox task `ppe` ở `/calibrate`); chỉnh qua `PUT /api/ppe`.
 
 ---
 

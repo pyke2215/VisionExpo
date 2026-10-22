@@ -11,6 +11,7 @@ const state = {
   alertLabels: new Set(),
 };
 const AUTO_INTERVAL_MS = 10000;
+const PPE_VI = { Hardhat: "Có mũ", "NO-Hardhat": "Thiếu mũ", Gloves: "Có găng", "NO-Gloves": "Thiếu găng" };
 const GRID_REFRESH_MS = 250;
 
 const $ = (id) => document.getElementById(id);
@@ -83,7 +84,8 @@ function renderList() {
       const sub =
         c.status === "running"
           ? `${c.fps ?? 0} fps · ${c.persons ?? 0} người${cr.enabled ? ` · trong ${cr.inside} / ngoài ${cr.outside}` : ""}` +
-            (c.alerts ? ` · <span style="color:var(--red)">${c.alerts} cảnh báo</span>` : "")
+            (c.alerts ? ` · <span style="color:var(--red)">${c.alerts} cảnh báo</span>` : "") +
+            (c.ppe_alerts ? ` · <span style="color:var(--red)">${c.ppe_alerts} thiếu PPE</span>` : "")
           : esc(c.error || statusText(c.status));
       return `<div class="cam-item ${!state.grid && c.id === state.selected ? "active" : ""}" data-id="${esc(c.id)}">
         <div class="name"><span class="dot ${dotClass(c.status)}"></span>${i + 1}. ${esc(c.name)}</div>
@@ -99,9 +101,10 @@ function renderSide() {
   $("peopleList").innerHTML = people.length
     ? people
         .map(
-          (p) => `<div class="it ${p.alert ? "alert" : ""}"><strong>#${p.track_id ?? "?"}</strong>
+          (p) => `<div class="it ${p.alert || p.ppe_alert ? "alert" : ""}"><strong>#${p.track_id ?? "?"}</strong>
           <span class="tag ${p.side}">${p.side === "in" ? "TRONG" : p.side === "out" ? "NGOÀI" : "?"}</span>
           ${p.alert ? `<span class="tag alert">VŨ KHÍ</span>` : ""}
+          ${(p.ppe || []).map((l) => `<span class="tag ${l.startsWith("NO-") ? "alert" : "in"}">${esc(PPE_VI[l] || l)}</span>`).join("")}
           <span class="muted small grow">${esc(p.items.map((x) => state.vi[x] || x).join(", "))}</span>
           ${state.grid ? `<span class="muted small">${esc(p.cam)}</span>` : ""}</div>`
         )
@@ -128,6 +131,15 @@ function renderSide() {
   $("objList").innerHTML = objs.length
     ? objs.map(([k, v]) => `<span class="chip on ${state.alertLabels.has(k.toLowerCase()) ? "alert" : ""}">${esc(k)}<span class="vi">${esc(state.vi[k] || "")}</span> ×${v}</span>`).join("")
     : `<span class="muted small">Không có</span>`;
+
+  const ppeCams = cams.filter((c) => (c.crossing || {}).ppe_active);
+  $("ppePanel").classList.toggle("hidden", !ppeCams.length);
+  const ppeCount = {};
+  ppeCams.forEach((c) => Object.entries(c.ppe || {}).forEach(([k, v]) => (ppeCount[k] = (ppeCount[k] || 0) + v)));
+  const ppe = Object.entries(ppeCount).sort((a, b) => b[1] - a[1]);
+  $("ppeList").innerHTML = ppe.length
+    ? ppe.map(([k, v]) => `<span class="chip on ${k.startsWith("NO-") ? "alert" : ""}">${esc(PPE_VI[k] || k)} ×${v}</span>`).join("")
+    : `<span class="muted small">Chưa có ai trong vùng PPE</span>`;
 }
 
 async function loadVocabulary() {
@@ -150,6 +162,12 @@ async function poll() {
     $("kObj").textContent = s.totals.objects;
     $("kAlert").textContent = s.totals.alerts || 0;
     $("kAlertBox").classList.toggle("active", (s.totals.alerts || 0) > 0);
+    $("kPpe").textContent = s.totals.ppe_alerts || 0;
+    $("kPpeBox").classList.toggle("active", (s.totals.ppe_alerts || 0) > 0);
+    const pp = s.ppe || {};
+    $("ppeState").textContent = pp.enabled
+      ? `PPE: ${pp.status}${pp.error ? " – " + pp.error : ""} · ${pp.mode} · ${pp.last_infer_ms} ms`
+      : "PPE đang tắt";
     const w = s.world;
     $("worldState").textContent = w.enabled ? `Đồ vật: ${w.status}${w.error ? " – " + w.error : ""} · ${w.last_infer_ms} ms` : "Nhận diện đồ vật đang tắt";
     $("metaInfo").textContent = `device ${s.device} · ${runningCams().length}/${s.cameras.length} camera`;

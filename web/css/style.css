@@ -100,7 +100,7 @@ input[type=range] { accent-color: var(--accent); }
 .toast.err { border-color: var(--red); }
 
 /* ---------- live page ---------- */
-.kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 14px; }
+.kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 14px; }
 .kpi.alert.active { border-color: var(--red); background: #3a1517; animation: blink 1s infinite; }
 .kpi.alert.active .v { color: var(--red); }
 @keyframes blink { 50% { background: var(--panel); } }

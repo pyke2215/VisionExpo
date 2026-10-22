@@ -23,6 +23,7 @@ class Person:
     alert: bool = False  # carries an item from an alert category (weapons)
     ppe: list = field(default_factory=list)  # PpeFinding attached (zone PPE task)
     ppe_alert: bool = False  # has a NO-* PPE finding
+    ppe_zone: bool = False  # inside the zone of a camera with the ppe task (set each frame)
 
     def foot_point(self) -> tuple[float, float]:
         """Ankle midpoint if visible, otherwise bottom-center of the box."""

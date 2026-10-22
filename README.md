@@ -130,6 +130,7 @@ Model: `yoloe-26l-seg.pt` (YOLOE, thế hệ sau của YOLO-World). Đo trên 30
 | `world.reject_static` | Bỏ vật nằm yên khi không ai mang, hoặc đứng yên khi người di chuyển |
 | `ppe.enabled`, `ppe.conf`, `ppe.imgsz`, `ppe.every_n` | Model PPE (`yolo_ppe.pt`): bật/tắt, ngưỡng (mặc định 0.25; điểm `NO-Hardhat` thường chỉ 0.3–0.6), kích thước suy luận, chạy mỗi N khung. Sửa nóng qua `PUT /api/ppe` |
 | `ppe.mode` | `"crop"` (mặc định: cắt khung từng người trong vùng, phóng lên `imgsz`, chạy theo batch) hoặc `"frame"` (một lần trên cả khung: nhanh hơn nhưng đầu/tay người ở xa quá nhỏ, gần như không nhận được) |
+| `ppe.infer_missing`, `ppe.require`, `ppe.confirm_runs` | Suy ra `NO-*` (mặc định bật, `["hardhat","gloves"]`, 3): lớp `NO-*` của model gần như không bao giờ bật trên camera nhìn từ trên xuống, nên người trong vùng có đầu / cổ tay thấy rõ trên khung xương mà ≥ N trong 5 lần chạy PPE gần nhất không thấy `Hardhat` / `Gloves` (và chưa lần nào thấy) bị báo thiếu. Box vẽ theo khung xương, `inferred: true` |
 | `cameras[].source` | RTSP URL, số webcam (`0`), hoặc đường dẫn file video (tự lặp) |
 | `cameras[].conf`, `imgsz`, `process_fps` | Ngưỡng phát hiện người, kích thước suy luận, FPS xử lý tối đa |
 | `cameras[].stream_width`, `jpeg_quality` | Độ phân giải / chất lượng luồng xem |

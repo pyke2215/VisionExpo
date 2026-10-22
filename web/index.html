@@ -14,6 +14,7 @@
       <div class="kpi out"><div class="v" id="kOutside">0</div><div class="l">Ngoài vùng</div></div>
       <div class="kpi"><div class="v" id="kObj">0</div><div class="l">Đồ vật</div></div>
       <div class="kpi alert" id="kAlertBox"><div class="v" id="kAlert">0</div><div class="l">Cảnh báo vũ khí</div></div>
+      <div class="kpi alert" id="kPpeBox"><div class="v" id="kPpe">0</div><div class="l">Thiếu PPE</div></div>
     </section>
 
     <section class="live-layout">
@@ -41,6 +42,11 @@
         <div class="panel">
           <h3>Người trong khung</h3>
           <div class="list" id="peopleList"></div>
+        </div>
+        <div class="panel" id="ppePanel">
+          <h3>PPE trong vùng</h3>
+          <div class="chips" id="ppeList"></div>
+          <div class="muted small" id="ppeState" style="margin-top:8px"></div>
         </div>
         <div class="panel">
           <h3>Sự kiện vào / ra</h3>

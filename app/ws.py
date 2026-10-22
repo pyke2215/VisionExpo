@@ -138,6 +138,8 @@ class WsHub:
                 "exits": cr.get("exits", 0),
                 "alerts": c.get("alerts", 0),
                 "objects": c.get("objects", {}),
+                "ppe": c.get("ppe", {}),
+                "ppe_alerts": c.get("ppe_alerts", 0),
             })
         return {"type": "status", "ts": time.time(), "totals": s["totals"], "cameras": cams}
 

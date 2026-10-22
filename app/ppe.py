@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
@@ -53,6 +54,68 @@ def _iou(a, b) -> float:
     return inter / union if union > 0 else 0.0
 
 
+# ---------- inferred negatives ----------
+# The NO-* classes of yolo_ppe.pt do not transfer to overhead CCTV (a clear bare head scores < 0.03), while
+# positives (a real hardhat / gloves) are what the model learned best. So a negative is inferred: the body
+# part is clearly visible on the pose keypoints, yet no positive was found on that person for several runs.
+KIND_LABELS = {"hardhat": ("Hardhat", "NO-Hardhat"), "gloves": ("Gloves", "NO-Gloves")}
+HEAD_KPTS = (0, 1, 2, 3, 4)  # nose, eyes, ears
+ARM_KPTS = ((7, 9), (8, 10))  # (elbow, wrist) left / right
+KPT_VISIBLE = 0.5
+EVIDENCE_WINDOW = 5  # PPE runs remembered per track and kind
+
+
+def _kpt(kpts, i) -> tuple[float, float] | None:
+    if kpts is None or len(kpts) <= i or kpts[i][2] < KPT_VISIBLE:
+        return None
+    return float(kpts[i][0]), float(kpts[i][1])
+
+
+def part_boxes(kind: str, kpts, box) -> list[tuple[float, float, float, float]]:
+    """Where the PPE of `kind` would be on this person, from visible keypoints (empty = part not visible)."""
+    x1, y1, x2, y2 = box
+    ph = max(1.0, y2 - y1)
+    if kind == "hardhat":
+        pts = [p for p in (_kpt(kpts, i) for i in HEAD_KPTS) if p is not None]
+        if len(pts) < 2:
+            return []
+        cx = sum(p[0] for p in pts) / len(pts)
+        cy = sum(p[1] for p in pts) / len(pts)
+        spread = max(max(p[0] for p in pts) - min(p[0] for p in pts), max(p[1] for p in pts) - min(p[1] for p in pts))
+        s = max(spread * 1.6, ph * 0.12, 12.0)
+        return [(cx - s / 2, cy - s * 0.75, cx + s / 2, cy + s * 0.35)]  # extends up: where a hat sits
+    out = []
+    for e_i, w_i in ARM_KPTS:
+        wr = _kpt(kpts, w_i)
+        if wr is None:
+            continue
+        el = _kpt(kpts, e_i)
+        cx, cy = wr
+        if el is not None:  # the hand continues past the wrist along the forearm
+            cx, cy = wr[0] + 0.35 * (wr[0] - el[0]), wr[1] + 0.35 * (wr[1] - el[1])
+        s = max(ph * 0.1, 12.0)
+        out.append((cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2))
+    return out
+
+
+class PpeEvidence:
+    """Per-track history of PPE runs: "pos" (positive seen), "neg" (part visible, no positive), None (not visible)."""
+
+    def __init__(self) -> None:
+        self.runs: dict[str, deque] = {}
+
+    def add(self, kind: str, obs: str | None) -> None:
+        self.runs.setdefault(kind, deque(maxlen=EVIDENCE_WINDOW)).append(obs)
+
+    def missing(self, kind: str, confirm_runs: int) -> float | None:
+        """Share of recent runs that saw the part bare, when the negative is confirmed; None otherwise."""
+        runs = self.runs.get(kind)
+        if not runs or "pos" in runs:
+            return None
+        neg = sum(1 for o in runs if o == "neg")
+        return neg / EVIDENCE_WINDOW if neg >= confirm_runs else None
+
+
 @dataclass
 class PpeFinding:
     label: str
@@ -61,6 +124,7 @@ class PpeFinding:
     alert: bool
     kind: str  # hardhat | gloves
     owner: int | None = None
+    inferred: bool = False  # NO-* derived from visible keypoints + no positive (not a model box)
 
 
 class PpeService:
@@ -120,6 +184,17 @@ class PpeService:
     @property
     def mode(self) -> str:
         return "frame" if self.cfg.get("mode") == "frame" else "crop"
+
+    @property
+    def required(self) -> list[str]:
+        """Kinds whose absence is reported (inferred NO-*); empty when infer_missing is off."""
+        if not self.cfg.get("infer_missing", True):
+            return []
+        return [k for k in (self.cfg.get("require") or list(KIND_LABELS)) if k in KIND_LABELS]
+
+    @property
+    def confirm_runs(self) -> int:
+        return int(min(max(int(self.cfg.get("confirm_runs", 3)), 1), EVIDENCE_WINDOW))
 
     def _predict(self, sources: list[np.ndarray]):
         with self._infer_lock:
@@ -207,6 +282,7 @@ class PpeService:
             "error": self.error,
             "model": self.cfg.get("model") or PPE_MODEL_DEFAULT,
             "mode": self.mode,
+            "required": self.required,
             "classes": [self._id_to_name[i] for i in self._class_ids] if self.model is not None else list(PPE_CLASSES),
             "last_infer_ms": round(self.last_infer_ms, 1),
             "config": self.cfg,
