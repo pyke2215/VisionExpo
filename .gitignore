@@ -1,5 +1,9 @@
 .venv/
 dist/
+show/
+Greco2026DashBoard/
+build_show.bat
+start_show.bat
 data/
 __pycache__/
 *.pyc
