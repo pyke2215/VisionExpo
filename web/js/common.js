@@ -56,7 +56,7 @@ function renderNav(active) {
   const links = [
     ["/", "live", "Live"],
     ["/cameras", "cameras", "Cameras"],
-    ["/calibrate", "calibrate", "Line / Vùng"],
+    ["/calibrate", "calibrate", "Line / Task"],
     ["/world", "world", "Đồ vật"],
     ["/data", "data", "Dữ liệu"],
     ["/socket", "socket", "Socket"],

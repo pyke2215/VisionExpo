@@ -21,6 +21,8 @@ class Person:
     side: str = "unknown"  # crossing side: "in" | "out" | "unknown"
     items: list[str] = field(default_factory=list)  # object labels attached to this person
     alert: bool = False  # carries an item from an alert category (weapons)
+    ppe: list = field(default_factory=list)  # PpeFinding attached (zone PPE task)
+    ppe_alert: bool = False  # has a NO-* PPE finding
 
     def foot_point(self) -> tuple[float, float]:
         """Ankle midpoint if visible, otherwise bottom-center of the box."""

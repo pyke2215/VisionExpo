@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Line / vùng – Vision Expo</title>
+  <title>Line / vùng &amp; task – Vision Expo</title>
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
   <main>
     <div class="row" style="margin-bottom:12px">
-      <h2 style="margin:0">Thiết lập đếm người vào / ra</h2>
+      <h2 style="margin:0">Line / vùng &amp; task</h2>
       <select id="camSelect" style="min-width:220px"></select>
       <div class="tabs" id="modeTabs" style="margin:0">
         <button data-mode="line">Line</button>
@@ -32,7 +32,9 @@
           <p class="muted small" id="hint"></p>
         </div>
         <div class="panel col">
-          <label class="check"><input type="checkbox" id="chkEnabled" checked /> <span id="enabledLabel">Bật đếm qua line</span></label>
+          <label class="check"><input type="checkbox" id="chkCount" checked /> <span id="countLabel">Đếm vào/ra</span></label>
+          <label class="check" id="ppeWrap"><input type="checkbox" id="chkPpe" /> PPE (mũ bảo hiểm + găng tay) trong vùng</label>
+          <p class="muted small" id="ppeHint" style="margin:0">PPE chỉ dùng với vùng polygon: báo Hardhat / Gloves và cảnh báo NO-Hardhat / NO-Gloves cho người đang ở trong vùng.</p>
           <div class="row">
             <button id="btnFlip">Đảo chiều VÀO/RA</button>
             <button id="btnClear">Vẽ lại</button>

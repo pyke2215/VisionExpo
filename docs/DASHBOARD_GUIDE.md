@@ -6,7 +6,7 @@ Dashboard mở tại `http://127.0.0.1:8000/` (máy khác trong LAN: `http://<IP
 |---|---|---|
 | Live | `/` | Xem camera trực tiếp, số người, đồ vật, cảnh báo |
 | Cameras | `/cameras` | Thêm / sửa / tắt / xóa camera |
-| Line / Vùng | `/calibrate` | Vẽ line hoặc vùng để biết người ở trong hay ngoài, đếm lượt vào/ra |
+| Line / Task | `/calibrate` | Vẽ line hoặc vùng; chọn task đếm vào/ra và/hoặc PPE trong vùng |
 | Đồ vật | `/world` | Bật nhận diện đồ vật, chỉnh ngưỡng, chọn từ khóa |
 | Dữ liệu | `/data` | Lịch sử, biểu đồ, xuất CSV, cấu hình lưu trữ |
 | Socket | `/socket` | Cấu hình WebSocket gửi dữ liệu cho app khác, theo dõi client |
@@ -18,7 +18,7 @@ Dashboard mở tại `http://127.0.0.1:8000/` (máy khác trong LAN: `http://<IP
 ## Lần đầu sử dụng
 
 1. **Cameras** → thêm từng camera, bấm **Kiểm tra** thấy ảnh rồi **Thêm**.
-2. **Line / Vùng** → chọn camera, vẽ vùng (hoặc line), **Lưu**.
+2. **Line / Task** → chọn camera, vẽ vùng (hoặc line), chọn task đếm/PPE nếu cần, **Lưu**.
 3. **Đồ vật** → bấm **Đang TẮT – bấm để bật**.
 4. **Live** → kiểm tra số người, khung, đồ vật.
 5. (Nếu có app hiển thị) **Socket** → đặt token, gửi URL cho bên làm app.
@@ -99,23 +99,26 @@ Mỗi camera có nút **Đang bật / Đang tắt**, **Sửa**, **Line** (mở t
 
 ---
 
-## Line / Vùng (`/calibrate`)
+## Line / vùng & task (`/calibrate`)
 
 Chọn camera ở ô trên cùng, chọn chế độ:
 
 ### Chế độ Vùng (polygon) – khuyên dùng
 
-Dùng khi muốn biết người đang **ở trong một khu vực** (khu trưng bày, quầy, sân khấu).
+Dùng khi muốn biết người đang **ở trong một khu vực** (khu trưng bày, quầy, sân khấu), và/hoặc kiểm tra PPE trong vùng đó.
 
 1. Click lần lượt các góc của vùng trên ảnh (ít nhất 3 điểm, tối đa 32).
 2. Chỉnh: **kéo** điểm để di chuyển, **click lên cạnh** để chèn thêm điểm, **chuột phải** vào điểm để xóa.
-3. **Lưu**.
+3. Chọn task: **Đếm vào/ra** và/hoặc **PPE (mũ + găng)**.
+4. **Lưu**.
 
-Người được xét theo **điểm chân** (giữa hai mắt cá). Đi từ ngoài vào trong vùng = một lượt VÀO, ra ngoài = một lượt RA (kèm thời gian đã ở trong).
+Người được xét theo **điểm chân** (giữa hai mắt cá). Đi từ ngoài vào trong vùng = một lượt VÀO (nếu bật đếm), ra ngoài = một lượt RA (kèm thời gian đã ở trong).
+
+**PPE:** model `yolo_ppe.pt` nhận `Hardhat` / `NO-Hardhat` / `Gloves` / `NO-Gloves` trên người đang **trong vùng**. Dương và âm đều hiện trên Live; chỉ `NO-*` tô đỏ và gửi sự kiện `ppe_alert`. Có thể bật PPE mà không bật đếm (vẫn tính trong/ngoài để lọc). Người "trong vùng" xét theo điểm chân (hoặc tâm thân), nên mũ trên đầu nằm ngoài polygon vẫn được tính. Model chạy trên ảnh cắt của từng người trong vùng (`ppe.mode = "crop"`); người cao dưới 48 px bị bỏ qua.
 
 ### Chế độ Line
 
-Dùng cho cửa ra vào hẹp, lối đi.
+Dùng cho cửa ra vào hẹp, lối đi. Chỉ task **Đếm vào/ra** (không có PPE).
 
 1. Click điểm **A**, click điểm **B** (line nằm trên sàn, cắt ngang lối đi).
 2. Click vào phía được coi là **bên trong** (điểm I).
@@ -128,7 +131,8 @@ Dùng cho cửa ra vào hẹp, lối đi.
 | Chụp lại khung hình | Lấy ảnh mới để vẽ (khi có người che) |
 | Ảnh live | Xem ảnh đang chạy với overlay |
 | Vẽ lại | Xóa hình đang vẽ |
-| Bật đếm | Tắt = không xét trong/ngoài, không đếm |
+| Đếm vào/ra | Task `count`: phát sự kiện vào/ra |
+| PPE (mũ + găng) | Task `ppe` (chỉ vùng): kiểm tra Hardhat/Gloves trong polygon |
 | Reset đếm | Đưa lượt vào/ra của camera này về 0 |
 
 Khung **"Bộ đếm camera này"** hiện số đang thấy / trong / ngoài theo thời gian thực, dùng để kiểm tra ngay sau khi lưu. Đổi chế độ line ↔ vùng không mất hình đã vẽ của chế độ kia.

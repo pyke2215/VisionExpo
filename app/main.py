@@ -14,7 +14,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .capture import grab_single_frame
-from .crossing import MAX_ZONE_POINTS
+from .crossing import ALLOWED_TASKS, MAX_ZONE_POINTS
+from .settings_store import ZONE_TASKS
 from .manager import CameraManager
 from .paths import WEB_DIR
 from .settings_store import SettingsStore
@@ -166,12 +167,29 @@ def create_app(device: str | None = None) -> FastAPI:
             if not (0.0 <= float(p.get("x", -1)) <= 1.0 and 0.0 <= float(p.get("y", -1)) <= 1.0):
                 raise HTTPException(400, "points must be normalized to 0..1")
         norm = lambda p: {"x": float(p["x"]), "y": float(p["y"])}  # noqa: E731
+        if "tasks" in payload:
+            raw_tasks = payload.get("tasks") or []
+            if not isinstance(raw_tasks, list):
+                raise HTTPException(400, "tasks must be a list")
+            tasks = []
+            for t in raw_tasks:
+                key = str(t).lower().strip()
+                if key not in ALLOWED_TASKS:
+                    raise HTTPException(400, f"unknown task '{t}'; allowed: {sorted(ZONE_TASKS)}")
+                if key not in tasks:
+                    tasks.append(key)
+            if mode == "line":
+                tasks = [t for t in tasks if t == "count"]
+        else:
+            # Backward compat: enabled checkbox alone → count task
+            tasks = ["count"] if bool(payload.get("enabled", True)) else []
         crossing = {
-            "enabled": bool(payload.get("enabled", True)),
+            "enabled": "count" in tasks,
             "mode": mode,
             "points": [norm(p) for p in pts],
             "inward_point": norm(inward) if inward else None,
             "zone": [norm(p) for p in zone],
+            "tasks": tasks,
         }
         return manager.update_camera(cam_id, {"crossing": crossing})["crossing"]
 
@@ -405,6 +423,27 @@ def create_app(device: str | None = None) -> FastAPI:
             patch["imgsz"] = int(min(max(int(patch["imgsz"]), 320), 1280)) // 32 * 32
         cfg = manager.update_world(patch)
         return {**manager.world.info(), "config": cfg}
+
+    # ---------- PPE detector ----------
+    @app.get("/api/ppe")
+    def api_ppe():
+        return manager.ppe.info()
+
+    @app.put("/api/ppe")
+    def api_update_ppe(payload: dict = Body(...)):
+        patch = {k: v for k, v in payload.items() if k in {"enabled", "mode", "conf", "imgsz", "every_n"}}
+        if "mode" in patch and patch["mode"] not in ("crop", "frame"):
+            raise HTTPException(400, "mode must be 'crop' or 'frame'")
+        if "enabled" in patch:
+            patch["enabled"] = bool(patch["enabled"])
+        if "conf" in patch:
+            patch["conf"] = float(min(max(float(patch["conf"]), 0.01), 0.95))
+        if "imgsz" in patch:
+            patch["imgsz"] = int(min(max(int(patch["imgsz"]), 160), 1280)) // 32 * 32
+        if "every_n" in patch:
+            patch["every_n"] = int(min(max(int(patch["every_n"]), 1), 30))
+        manager.update_ppe(patch)
+        return manager.ppe.info()
 
     @app.put("/api/world/vocabulary")
     def api_update_vocabulary(payload: dict = Body(...)):

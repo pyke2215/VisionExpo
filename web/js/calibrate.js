@@ -177,7 +177,10 @@ function updatePanel() {
   $("steps").innerHTML = STEPS[st.mode].map((t, i) => `<li class="${done[i] ? "done" : ""} ${i === cur ? "cur" : ""}">${esc(t)}</li>`).join("");
   $("hint").textContent = HINTS[st.mode];
   $("btnFlip").classList.toggle("hidden", zone);
-  $("enabledLabel").textContent = zone ? "Bật đếm vào/ra vùng" : "Bật đếm qua line";
+  $("countLabel").textContent = zone ? "Đếm vào/ra vùng" : "Đếm qua line";
+  $("ppeWrap").classList.toggle("hidden", !zone);
+  $("ppeHint").classList.toggle("hidden", !zone);
+  if (!zone) $("chkPpe").checked = false;
   const f = (p) => `(${p.x.toFixed(3)}, ${p.y.toFixed(3)})`;
   $("coords").textContent = zone
     ? (st.zone.length ? `${st.zone.length} điểm: ${st.zone.map(f).join(" ")}` : "")
@@ -290,7 +293,9 @@ async function selectCamera(id, push = true) {
   st.inward = c.inward_point || null;
   st.zone = (c.zone || []).slice(0, MAX_ZONE_POINTS);
   if (st.pts.length === 2 && !st.inward) st.inward = defaultInward();
-  $("chkEnabled").checked = c.enabled !== false;
+  const tasks = Array.isArray(c.tasks) ? c.tasks : (c.enabled !== false ? ["count"] : []);
+  $("chkCount").checked = tasks.includes("count");
+  $("chkPpe").checked = tasks.includes("ppe");
   st.dirty = false;
   st.img = null;
   draw();
@@ -300,22 +305,30 @@ async function selectCamera(id, push = true) {
 async function save() {
   if (st.mode === "line" && st.pts.length === 1) return toast("Cần đủ 2 điểm A và B", true);
   if (st.mode === "zone" && st.zone.length > 0 && st.zone.length < 3) return toast("Vùng cần ít nhất 3 điểm", true);
+  const tasks = [];
+  if ($("chkCount").checked) tasks.push("count");
+  if (st.mode === "zone" && $("chkPpe").checked) tasks.push("ppe");
+  if (st.mode === "zone" && $("chkPpe").checked && st.zone.length < 3) {
+    return toast("Bật PPE cần vùng ít nhất 3 điểm", true);
+  }
   try {
     await api(`/api/cameras/${encodeURIComponent(st.camId)}/crossing`, {
       method: "PUT",
       body: {
-        enabled: $("chkEnabled").checked,
+        enabled: tasks.includes("count"),
         mode: st.mode,
         points: st.pts.length === 2 ? st.pts : [],
         inward_point: st.pts.length === 2 ? st.inward : null,
         zone: st.zone.length >= 3 ? st.zone : [],
+        tasks,
       },
     });
     st.dirty = false;
     draw();
     const what = st.mode === "zone" ? "vùng" : "line";
     const empty = st.mode === "zone" ? !st.zone.length : !st.pts.length;
-    toast(empty ? `Đã xóa ${what}` : `Đã lưu ${what}, áp dụng ngay`);
+    const taskTxt = tasks.length ? ` [${tasks.join(", ")}]` : "";
+    toast(empty ? `Đã xóa ${what}` : `Đã lưu ${what}${taskTxt}, áp dụng ngay`);
   } catch (e) {
     toast(e.message, true);
   }
@@ -353,7 +366,8 @@ $("btnClear").onclick = () => {
   markDirty();
 };
 $("btnSave").onclick = save;
-$("chkEnabled").onchange = () => { st.dirty = true; updatePanel(); };
+$("chkCount").onchange = () => { st.dirty = true; updatePanel(); };
+$("chkPpe").onchange = () => { st.dirty = true; updatePanel(); };
 $("btnResetCount").onclick = async () => {
   try {
     await api(`/api/cameras/${encodeURIComponent(st.camId)}/crossing/reset`, { method: "POST" });

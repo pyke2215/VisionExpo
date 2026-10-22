@@ -2,7 +2,7 @@ renderNav("data");
 
 const $ = (id) => document.getElementById(id);
 const PAGE = 50;
-const EVENT_TYPES = { crossing: "Vào / ra", alert: "Cảnh báo", camera: "Camera", reset: "Reset đếm" };
+const EVENT_TYPES = { crossing: "Vào / ra", alert: "Cảnh báo vũ khí", ppe_alert: "Cảnh báo PPE", camera: "Camera", reset: "Reset đếm" };
 const st = { labels: { vi: {}, alerts: new Set() }, cams: {}, tab: "tracks", tPage: 0, ePage: 0 };
 
 // ---------- filters ----------
@@ -143,7 +143,8 @@ function eventDetail(e) {
   if (e.type === "crossing")
     return `<span class="tag ${e.direction}">${e.direction === "in" ? "VÀO" : "RA"}</span>` +
       (e.data?.mode === "zone" ? ` <span class="muted small">vùng${e.data.dwell_s != null ? ` · ở ${fmtDuration(e.data.dwell_s)}` : ""}</span>` : "");
-  if (e.type === "alert") return `<span class="tag alert">${esc((e.data?.items || []).join(", "))}</span> <span class="muted small">${esc((e.data?.all_items || []).join(", "))}</span>`;
+  if (e.type === "alert" || e.type === "ppe_alert")
+    return `<span class="tag alert">${esc((e.data?.items || []).join(", "))}</span> <span class="muted small">${esc((e.data?.all_items || []).join(", "))}</span>`;
   if (e.type === "camera") return `${esc(e.data?.status || "")} <span class="muted small">${esc(e.data?.error || "")}</span>`;
   return "";
 }

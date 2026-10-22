@@ -82,7 +82,7 @@ Kết nối `ws://<ip-máy>:8000/ws?topics=status,events&cameras=camera_1&token=
 |---|---|---|
 | `status` | `status` | Định kỳ (`status_hz`, mặc định 2 lần/giây): số người đang thấy (`persons`), đang trong / ngoài vùng (`inside` / `outside`), tổng lượt vào/ra, đồ vật, cảnh báo; tổng và từng camera |
 | `people` | `people` | Định kỳ (`people_hz`): từng người với `track_id`, khung và điểm chân (tọa độ chuẩn hóa 0–1), phía trong/ngoài, cờ cảnh báo, `items` (danh sách nhãn) và `objects` (từng đồ vật: `label`, `vi`, `category`, `conf`, `alert`, `box`) |
-| `events` | `crossing`, `alert`, `camera`, `reset` | Ngay khi xảy ra: vào/ra (`direction` = `in`/`out`, `mode` = `line`/`zone`; ra khỏi vùng kèm `dwell_s` = số giây đã ở trong vùng), phát hiện vũ khí (đạt `alert_conf` và thấy ít nhất `alert_hits` trong 5 lần chạy gần nhất, lặp lại tối đa 30 giây một lần cho mỗi người), camera đổi trạng thái, reset bộ đếm |
+| `events` | `crossing`, `alert`, `ppe_alert`, `camera`, `reset` | Ngay khi xảy ra: vào/ra (`direction` = `in`/`out`, `mode` = `line`/`zone`; ra khỏi vùng kèm `dwell_s`), phát hiện vũ khí, thiếu PPE trong vùng (`NO-Hardhat` / `NO-Gloves` khi task `ppe`), camera đổi trạng thái, reset bộ đếm |
 | `tracks` | `track` | Khi một người rời khung (3 giây không thấy): thời gian xuất hiện, phía đầu/cuối, đồ vật mang theo |
 
 Sau khi kết nối, server gửi `hello` rồi một `status`. Client gửi JSON `{"action": ...}`: `ping`, `subscribe` / `unsubscribe` (`topics`), `set_cameras` (`cameras`), `get_status`.
@@ -128,10 +128,12 @@ Model: `yoloe-26l-seg.pt` (YOLOE, thế hệ sau của YOLO-World). Đo trên 30
 | `world.min_obj_px` | Bỏ box đồ vật có cạnh ngắn nhỏ hơn N px (mặc định 14): vật quá nhỏ trên ảnh thường là nhận nhầm |
 | `world.confirm_hits`, `world.alert_hits`, `world.drop_misses` | Hiện đồ vật khi thấy ≥ N/5 lần chạy (2), cảnh báo vũ khí khi ≥ N/5 (3), ẩn sau N lần liên tiếp không thấy (3) |
 | `world.reject_static` | Bỏ vật nằm yên khi không ai mang, hoặc đứng yên khi người di chuyển |
+| `ppe.enabled`, `ppe.conf`, `ppe.imgsz`, `ppe.every_n` | Model PPE (`yolo_ppe.pt`): bật/tắt, ngưỡng (mặc định 0.25; điểm `NO-Hardhat` thường chỉ 0.3–0.6), kích thước suy luận, chạy mỗi N khung. Sửa nóng qua `PUT /api/ppe` |
+| `ppe.mode` | `"crop"` (mặc định: cắt khung từng người trong vùng, phóng lên `imgsz`, chạy theo batch) hoặc `"frame"` (một lần trên cả khung: nhanh hơn nhưng đầu/tay người ở xa quá nhỏ, gần như không nhận được) |
 | `cameras[].source` | RTSP URL, số webcam (`0`), hoặc đường dẫn file video (tự lặp) |
 | `cameras[].conf`, `imgsz`, `process_fps` | Ngưỡng phát hiện người, kích thước suy luận, FPS xử lý tối đa |
 | `cameras[].stream_width`, `jpeg_quality` | Độ phân giải / chất lượng luồng xem |
-| `cameras[].crossing` | `mode` (`line` / `zone`); line: `points` (A, B chuẩn hóa 0–1), `inward_point` (phía bên trong); vùng: `zone` (3–32 điểm chuẩn hóa 0–1). Đổi chế độ không mất cấu hình của chế độ kia |
+| `cameras[].crossing` | `mode` (`line` / `zone`); `tasks` (`count`, `ppe` — PPE chỉ vùng); line: `points` + `inward_point`; vùng: `zone` (3–32 điểm). Đổi chế độ không mất hình của chế độ kia |
 | `websocket.enabled`, `status_hz`, `people_hz`, `default_topics`, `token` | WebSocket `/ws` |
 | `database.enabled`, `sample_every_s`, `retention_days`, `save_tracks`, `restore_counts` | Database |
 

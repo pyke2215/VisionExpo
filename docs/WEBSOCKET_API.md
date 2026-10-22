@@ -102,12 +102,14 @@ Mỗi camera:
 ```json
 {"type":"people","ts":1791877286.1,
  "cameras":[{"id":"camera_1","frame_size":[1920,1080],
-   "people":[{"track_id":27,"side":"in","alert":false,
+   "people":[{"track_id":27,"side":"in","alert":false,"ppe_alert":true,
               "items":["backpack","glasses"],
               "objects":[{"label":"backpack","vi":"ba lô","category":"bags","conf":0.82,"alert":false,
                           "box":[0.43,0.38,0.51,0.60]},
                          {"label":"glasses","vi":"kính","category":"face","conf":0.71,"alert":false,
                           "box":[0.45,0.31,0.48,0.33]}],
+              "ppe":[{"label":"NO-Hardhat","kind":"hardhat","conf":0.61,"alert":true,"box":[0.42,0.28,0.50,0.36]},
+                     {"label":"Gloves","kind":"gloves","conf":0.55,"alert":false,"box":[0.44,0.55,0.49,0.62]}],
               "conf":0.88,"box":[0.41,0.30,0.52,0.86],"foot":[0.47,0.85]}]}]}
 ```
 
@@ -120,8 +122,10 @@ Mỗi người:
 | `track_id` | int \| null | Mã theo dõi, giữ nguyên khi người đó còn trong khung. Duy nhất **trong một camera**, không liên kết giữa các camera; có thể đổi khi bị che khuất lâu; đánh lại từ đầu khi server khởi động lại. `null` hiếm gặp (chưa kịp gán) |
 | `side` | string | `"in"` (trong vùng), `"out"` (ngoài vùng), `"unknown"` (chưa xác định / camera chưa vẽ line-vùng) |
 | `alert` | bool | Đang mang vật thuộc nhóm vũ khí |
+| `ppe_alert` | bool | Đang có case PPE âm (`NO-Hardhat` / `NO-Gloves`) trong vùng có task PPE |
 | `items` | string[] | Nhãn tiếng Anh các đồ vật đang mang (không trùng, sắp xếp) |
 | `objects` | object[] | Chi tiết từng đồ vật (bảng dưới) |
+| `ppe` | object[] | Kết quả PPE gắn người trong vùng (rỗng nếu camera không bật task `ppe`) |
 | `conf` | float | Độ tin cậy phát hiện người (0–1) |
 | `box` | float[4] | Khung người `[x1, y1, x2, y2]`, chuẩn hóa 0–1 |
 | `foot` | float[2] | Điểm chân `[x, y]` (dùng để xét trong/ngoài vùng) |
@@ -140,6 +144,18 @@ Mỗi đồ vật trong `objects`:
 Không có trường `clip` trên WebSocket (điểm CLIP chỉ hiện trên overlay dashboard khi bật chế độ thử nghiệm). App nhận cùng schema field như trước; chỉ **tập giá trị `label`** đã gộp so với bản từ vựng cũ (không còn `cap`, `sunglasses`, `handgun`… riêng lẻ).
 
 Đồ vật trong `objects` đã được server lọc: chỉ những vật thấy ổn định qua nhiều lần quét, đủ ngưỡng hiển thị, không lẫn với tóc/quần áo. App không cần lọc thêm; danh sách này trùng với những gì dashboard vẽ trên khung hình.
+
+Mỗi phần tử trong `ppe` (chỉ khi vùng camera bật task `ppe`):
+
+| Trường | Kiểu | Ý nghĩa |
+|---|---|---|
+| `label` | string | `Hardhat`, `NO-Hardhat`, `Gloves`, `NO-Gloves` |
+| `kind` | string | `"hardhat"` hoặc `"gloves"` |
+| `conf` | float | Độ tin cậy model PPE (0–1) |
+| `alert` | bool | `true` với nhãn `NO-*` (thiếu đồ bảo hộ) |
+| `box` | float[4] | Khung `[x1,y1,x2,y2]` chuẩn hóa 0–1 |
+
+PPE chỉ gắn người có `side = "in"`. Dương và âm đều gửi; chỉ âm đặt `ppe_alert` / sự kiện `ppe_alert`.
 
 Đổi sang pixel: `x_px = x * frame_size[0]`, `y_px = y * frame_size[1]`.
 
@@ -169,6 +185,15 @@ Người đã đứng sẵn trong vùng lúc xuất hiện (mới khởi động
 ```
 
 `items` = các vật thuộc nhóm vũ khí, `all_items` = mọi đồ vật người đó đang mang. Gửi khi vật được xác nhận (thấy ổn định qua nhiều lần quét), lặp lại tối đa **30 giây một lần** cho mỗi người nếu vẫn còn mang. Trạng thái tức thời xem `people[].alert`.
+
+**`ppe_alert` – thiếu PPE trong vùng**
+
+```json
+{"type":"ppe_alert","ts":1791877296.0,"camera_id":"camera_1","track_id":27,
+ "items":["NO-Hardhat"],"all_items":["NO-Hardhat","Gloves"]}
+```
+
+Chỉ khi vùng polygon bật task `ppe`. `items` = các nhãn âm hiện có (`NO-Hardhat`, `NO-Gloves`); `all_items` = mọi nhãn PPE đang gắn người đó. Lặp tối đa khoảng **8 giây một lần** cho cùng tổ hợp / người. Trạng thái tức thời: `people[].ppe_alert` và `people[].ppe`.
 
 **`camera` – camera đổi trạng thái**
 
@@ -268,6 +293,7 @@ Cùng host/cổng, trả JSON (không cần token).
 | Khung người, đồ vật mang theo | `people` |
 | Danh sách đồ vật của một người | `people[].objects` (`vi` để hiển thị) |
 | Cảnh báo vũ khí | Tức thời: `people[].alert`; thông báo/âm thanh: sự kiện `alert` |
+| PPE trong vùng (mũ / găng) | `people[].ppe`, `people[].ppe_alert`; sự kiện `ppe_alert` |
 | Bảng "vừa vào / vừa ra" | Sự kiện `crossing` |
 | Thống kê sau khi người rời đi | Sự kiện `track` (topic `tracks`) |
 | Camera mất tín hiệu | Sự kiện `camera`, hoặc `status.cameras[].status` |

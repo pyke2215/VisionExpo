@@ -7,6 +7,7 @@ import threading
 from .db import Database
 from .events import EventHub
 from .paths import DATABASE_FILE, resolve_model
+from .ppe import PpeService
 from .settings_store import RESTART_FIELDS, SettingsStore
 from .worker import CameraWorker
 from .world import WorldService
@@ -32,6 +33,7 @@ class CameraManager:
         self.device = _usable_device(device_override or str(store.get("device") or "0"))
         self.person_weights = resolve_model(store.get("person_model"))
         self.world = WorldService(store.get("world") or {}, device=self.device)
+        self.ppe = PpeService(store.get("ppe") or {}, device=self.device)
         self.hub = EventHub()
         self.db = Database(DATABASE_FILE, cfg_getter=lambda: store.get("database") or {}, status_getter=self.status)
         self.hub.subscribe(self.db.on_event)
@@ -72,6 +74,7 @@ class CameraManager:
                 person_weights=self.person_weights,
                 device=self.device,
                 world=self.world,
+                ppe=self.ppe,
                 hub=self.hub,
                 initial_counts=self._initial_counts(cam["id"], old),
             )
@@ -132,10 +135,18 @@ class CameraManager:
         self.world.update_config(data["world"])
         return data["world"]
 
+    def update_ppe(self, patch: dict) -> dict:
+        data = self.store.update_global({"ppe": patch})
+        self.ppe.update_config(data["ppe"])
+        return data["ppe"]
+
     # ---------- status ----------
     def status(self) -> dict:
         cams = []
-        totals = {"persons": 0, "inside": 0, "outside": 0, "entries": 0, "exits": 0, "objects": 0, "alerts": 0}
+        totals = {
+            "persons": 0, "inside": 0, "outside": 0, "entries": 0, "exits": 0,
+            "objects": 0, "alerts": 0, "ppe_alerts": 0,
+        }
         for cam in self.store.cameras():
             w = self.worker(cam["id"])
             if w is None:
@@ -150,4 +161,11 @@ class CameraManager:
             totals["outside"] += s["crossing"].get("outside") or 0
             totals["objects"] += sum(s["objects"].values())
             totals["alerts"] += s["alerts"]
-        return {"cameras": cams, "totals": totals, "world": self.world.info(), "device": self.device}
+            totals["ppe_alerts"] += s.get("ppe_alerts", 0)
+        return {
+            "cameras": cams,
+            "totals": totals,
+            "world": self.world.info(),
+            "ppe": self.ppe.info(),
+            "device": self.device,
+        }

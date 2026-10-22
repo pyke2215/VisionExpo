@@ -1,6 +1,6 @@
 # Tài liệu code
 
-Dành cho người bảo trì / phát triển tiếp. Cài đặt môi trường: [SETUP.md](SETUP.md). Dữ liệu gửi ra ngoài: [WEBSOCKET_API.md](WEBSOCKET_API.md).
+Dành cho người bảo trì / phát triển tiếp. Bản đồ module / luồng dạng graph để đọc nhanh: [GRAPH.md](GRAPH.md). Cài đặt môi trường: [SETUP.md](SETUP.md). Dữ liệu gửi ra ngoài: [WEBSOCKET_API.md](WEBSOCKET_API.md).
 
 ## 1. Tổng quan
 
@@ -93,8 +93,9 @@ Nguyên tắc:
 3. **Đồ vật** (nếu bật, mỗi `every_n` khung):
    - `scope = "person"` (mặc định): `WorldService.detect(frame, keep_rivals=True)` trên cả khung (model tự letterbox về `imgsz`), lọc trùng nhưng giữ các cách đọc khác nhóm → `ItemTracker.update(dets, persons, cfg)`: track vật bằng ByteTrack, rồi gán cho người theo bbox. Mỗi khung: `ItemTracker.render(persons, show_conf)` trả vật đã ổn định, đồng thời gán `p.items` và `p.alert`.
    - `scope = "frame"`: `WorldService.detect(frame)` trên cả khung, không track, lọc theo `show_conf`, `attach_objects()` gán vật cho người.
-4. **Theo dõi lượt người**: `_update_tracks()` cộng dồn đồ vật / phía cho từng `track_id`, phát `alert` (tối đa 30 giây/lần/người), và phát `track` khi người biến mất quá 3 giây.
-5. **Vẽ + phát**: `draw.render()` → resize theo `stream_width` → JPEG → `latest_jpeg()` cho MJPEG.
+4. **PPE** (camera có vùng + task `ppe`, mỗi `ppe.every_n` khung): `mode = "crop"` → `PpeService.detect_people()` cắt khung nới rộng (`expand_box`) của từng người trong vùng, batch, gán chủ sẵn; `mode = "frame"` → `detect()` cả khung. `_assign_ppe()` gắn kết quả cho người trong vùng (theo chủ, không theo vị trí box so với polygon), sinh `ppe_alert` cho `NO-*` (8 giây/lần/người/tổ hợp).
+5. **Theo dõi lượt người**: `_update_tracks()` cộng dồn đồ vật / phía cho từng `track_id`, phát `alert` (tối đa 30 giây/lần/người), và phát `track` khi người biến mất quá 3 giây.
+6. **Vẽ + phát**: `draw.render()` → resize theo `stream_width` → JPEG → `latest_jpeg()` cho MJPEG.
 
 ## 5. Các module chính
 
@@ -183,6 +184,7 @@ Màu theo phía (`SIDE_COLORS`: xanh trong, cam ngoài, xám chưa rõ), đỏ k
 | POST | `/api/cameras/{id}/crossing/reset`, `/api/crossing/reset_all` | Reset lượt vào/ra |
 | GET | `/api/cameras/{id}/stream.mjpg`, `frame.jpg`, `snapshot.jpg` | Video MJPEG / ảnh có overlay / ảnh gốc |
 | GET/PUT | `/api/world` | Thông tin (có `base_model`) + cấu hình nhận diện đồ vật (PUT kiểm tra và giới hạn từng khóa) |
+| GET/PUT | `/api/ppe` | Trạng thái + cấu hình PPE (`enabled`, `mode`, `conf`, `imgsz`, `every_n`) |
 | PUT | `/api/world/vocabulary` | Lưu bộ từ mới và mã hóa lại ở nền |
 | GET/PUT | `/api/ws` | Thông tin client / cấu hình WebSocket |
 | WS | `/ws` | WebSocket ([WEBSOCKET_API.md](WEBSOCKET_API.md)) |

@@ -9,7 +9,9 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .paths import PERSON_MODEL_DEFAULT, SETTINGS_FILE, WORLD_BAKED_MODEL
+from .paths import PERSON_MODEL_DEFAULT, PPE_MODEL_DEFAULT, SETTINGS_FILE, WORLD_BAKED_MODEL
+
+ZONE_TASKS = ("count", "ppe")
 
 CAMERA_DEFAULTS: dict[str, Any] = {
     "name": "",
@@ -30,6 +32,7 @@ CAMERA_DEFAULTS: dict[str, Any] = {
         "points": [],
         "inward_point": None,
         "zone": [],
+        "tasks": ["count"],  # zone: "count" = vào/ra, "ppe" = Hardhat/Gloves trong vùng
     },
 }
 
@@ -58,6 +61,14 @@ GLOBAL_DEFAULTS: dict[str, Any] = {
         "reject_static": True,
         "clip_verify": False,  # after YOLOE, score each crop with CLIP ViT-B/32 and drop below clip_min
         "clip_min": 0.22,  # cosine similarity; short labels usually land ~0.20–0.30
+    },
+    "ppe": {
+        "enabled": True,
+        "model": PPE_MODEL_DEFAULT,
+        "mode": "crop",  # crop = one upscaled crop per in-zone person; frame = single whole-frame pass
+        "conf": 0.25,
+        "imgsz": 640,
+        "every_n": 2,
     },
     "websocket": {
         "enabled": True,
@@ -92,6 +103,19 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return out
 
 
+def normalize_crossing_tasks(crossing: dict) -> list[str]:
+    """Valid task list; cameras without `tasks` keep counting if `enabled` was true."""
+    raw = crossing.get("tasks")
+    if raw is None:
+        return ["count"] if crossing.get("enabled", True) else []
+    out: list[str] = []
+    for t in raw:
+        key = str(t).lower().strip()
+        if key in ZONE_TASKS and key not in out:
+            out.append(key)
+    return out
+
+
 def normalize_camera(cam: dict) -> dict:
     merged = _deep_merge(CAMERA_DEFAULTS, cam)
     merged["id"] = str(merged.get("id") or "").strip()
@@ -102,6 +126,10 @@ def normalize_camera(cam: dict) -> dict:
     merged["process_fps"] = float(min(max(float(merged["process_fps"]), 1.0), 60.0))
     merged["stream_width"] = int(min(max(int(merged["stream_width"]), 320), 3840))
     merged["jpeg_quality"] = int(min(max(int(merged["jpeg_quality"]), 30), 95))
+    cr = merged.setdefault("crossing", {})
+    tasks = normalize_crossing_tasks(cr)
+    cr["tasks"] = tasks
+    cr["enabled"] = "count" in tasks  # backward-compatible flag for counting
     return merged
 
 

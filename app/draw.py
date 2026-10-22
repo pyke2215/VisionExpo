@@ -18,6 +18,7 @@ SKELETON = [
 SIDE_COLORS = {"in": (80, 200, 60), "out": (0, 140, 255), "unknown": (200, 200, 200)}
 LINE_COLOR = (255, 0, 200)
 OBJ_COLOR = (255, 200, 0)
+PPE_OK_COLOR = (60, 200, 120)
 ALERT_COLOR = (40, 40, 255)
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 
@@ -80,6 +81,7 @@ def render(
     show_skeleton: bool,
     show_boxes: bool,
     zone_px=None,
+    ppe=None,
 ) -> np.ndarray:
     img = frame.copy()
     h, w = img.shape[:2]
@@ -100,8 +102,14 @@ def render(
             tag += f"|{obj.clip:.2f}"
         _label(img, tag, (x1, y1), oc, 0.45 * scale)
 
+    for finding in ppe or []:
+        x1, y1, x2, y2 = (int(v) for v in finding.box)
+        pc = ALERT_COLOR if finding.alert else PPE_OK_COLOR
+        cv2.rectangle(img, (x1, y1), (x2, y2), pc, thick)
+        _label(img, f"{finding.label} {finding.conf:.2f}", (x1, y1), pc, 0.45 * scale)
+
     for p in persons:
-        color = ALERT_COLOR if p.alert else SIDE_COLORS.get(p.side, SIDE_COLORS["unknown"])
+        color = ALERT_COLOR if (p.alert or p.ppe_alert) else SIDE_COLORS.get(p.side, SIDE_COLORS["unknown"])
         x1, y1, x2, y2 = (int(v) for v in p.box)
         if show_boxes:
             cv2.rectangle(img, (x1, y1), (x2, y2), color, thick + 1)
@@ -120,6 +128,8 @@ def render(
             tag += f" {p.side.upper()}"
         if p.alert:
             tag += " ALERT"
+        if p.ppe_alert:
+            tag += " PPE"
         _label(img, tag, (x1, y1), color, 0.55 * scale, max(1, int(scale)))
         if p.items:
             ic = ALERT_COLOR if p.alert else OBJ_COLOR

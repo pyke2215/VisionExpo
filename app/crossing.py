@@ -3,13 +3,16 @@
 Config is normalized (0..1) so it survives resolution changes:
     {"enabled": true, "mode": "line" | "zone",
      "points": [{"x":..,"y":..}, {"x":..,"y":..}], "inward_point": {"x":..,"y":..},   # line mode
-     "zone": [{"x":..,"y":..}, ...]}                                                     # zone mode, >= 3 points
+     "zone": [{"x":..,"y":..}, ...],                                                     # zone mode, >= 3 points
+     "tasks": ["count", "ppe"]}                                                          # features for this geometry
 
 line: a track whose foot point changes side of the segment A-B counts IN (towards inward_point) or OUT.
 zone: a track whose foot point goes from outside to inside the polygon counts IN, inside to outside OUT;
       OUT events carry the time spent inside.
 A track first seen already inside the zone is inside but not an entry (no double counts on ID switches).
 `inside` / `outside` are the people currently visible on each side (line: the inward side counts as inside).
+
+`tasks`: "count" emits crossing events; "ppe" (zone only) still updates `.side` so PPE can filter by inside.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ DEAD_ZONE_FRAC = 0.006  # band around the line / zone border (fraction of frame 
 COOLDOWN_S = 1.0  # ignore repeated flips of the same track within this window
 STALE_TRACK_S = 30.0
 MAX_ZONE_POINTS = 32
+ALLOWED_TASKS = frozenset({"count", "ppe"})
 
 
 def line_is_valid(cfg: dict | None) -> bool:
@@ -41,6 +45,18 @@ def zone_is_valid(cfg: dict | None) -> bool:
 
 def mode_of(cfg: dict | None) -> str:
     return "zone" if (cfg or {}).get("mode") == "zone" else "line"
+
+
+def tasks_of(cfg: dict | None) -> list[str]:
+    raw = (cfg or {}).get("tasks")
+    if raw is None:
+        return ["count"] if (cfg or {}).get("enabled", True) else []
+    out: list[str] = []
+    for t in raw:
+        key = str(t).lower().strip()
+        if key in ALLOWED_TASKS and key not in out:
+            out.append(key)
+    return out
 
 
 class CrossingCounter:
@@ -62,15 +78,36 @@ class CrossingCounter:
     def mode(self) -> str:
         return mode_of(self.cfg)
 
+    def tasks(self) -> list[str]:
+        return tasks_of(self.cfg)
+
+    def has_task(self, name: str) -> bool:
+        return name in tasks_of(self.cfg)
+
+    @property
+    def geometry_ok(self) -> bool:
+        return zone_is_valid(self.cfg) if self.mode == "zone" else line_is_valid(self.cfg)
+
     @property
     def enabled(self) -> bool:
-        if not self.cfg.get("enabled", True):
+        """Counting is on: task count + valid geometry."""
+        return self.has_task("count") and self.geometry_ok
+
+    @property
+    def ppe_active(self) -> bool:
+        """Zone has PPE task and a valid polygon (sides are maintained for inside filter)."""
+        return self.mode == "zone" and self.has_task("ppe") and zone_is_valid(self.cfg)
+
+    @property
+    def active(self) -> bool:
+        """Geometry is used for counting and/or PPE side tracking."""
+        if not self.geometry_ok:
             return False
-        return zone_is_valid(self.cfg) if self.mode == "zone" else line_is_valid(self.cfg)
+        return self.has_task("count") or (self.mode == "zone" and self.has_task("ppe"))
 
     def set_config(self, cfg: dict | None) -> None:
         with self._lock:
-            key = lambda c: (mode_of(c), c.get("points"), c.get("inward_point"), c.get("zone"))  # noqa: E731
+            key = lambda c: (mode_of(c), c.get("points"), c.get("inward_point"), c.get("zone"), tuple(tasks_of(c)))  # noqa: E731
             changed = key(self.cfg) != key(cfg or {})
             self.cfg = dict(cfg or {})
             if changed:
@@ -110,11 +147,13 @@ class CrossingCounter:
         return 1
 
     def update(self, persons: list[Person], w: int, h: int, now: float | None = None) -> list[dict]:
-        """Update sides, annotate persons with .side, return new events of this frame."""
+        """Update sides, annotate persons with .side, return new crossing events (only if task count)."""
         now = time.time() if now is None else now
         with self._lock:
-            if not self.enabled:
+            if not self.active:
                 self.inside = self.outside = 0
+                for p in persons:
+                    p.side = "unknown"
                 return []
             dead = max(3.0, DEAD_ZONE_FRAC * math.hypot(w, h))
             if self.mode == "zone":
@@ -126,7 +165,7 @@ class CrossingCounter:
             for ev in events:
                 self.events.appendleft(ev)
             self._purge_stale(now)
-        return events
+            return events if self.has_task("count") else []
 
     def _count(self, tid: int, direction: str, now: float, extra: dict | None = None) -> dict:
         if direction == "in":
@@ -143,6 +182,7 @@ class CrossingCounter:
         if ab_len < 1.0:
             return events
         in_sign = self._in_sign(a, b, w, h)
+        do_count = self.has_task("count")
         for p in persons:
             fx, fy = p.foot_point()
             dist = _cross(a, b, (fx, fy)) / ab_len
@@ -157,7 +197,7 @@ class CrossingCounter:
             if side != 0:
                 within = -SEGMENT_SLACK <= t <= 1.0 + SEGMENT_SLACK
                 cooled = now - self._last_event.get(tid, 0.0) >= COOLDOWN_S
-                if prev is not None and prev != side and within and cooled:
+                if do_count and prev is not None and prev != side and within and cooled:
                     events.append(self._count(tid, "in" if side == in_sign else "out", now))
                 self._last_side[tid] = side
             cur = self._last_side.get(tid)
@@ -167,6 +207,7 @@ class CrossingCounter:
     def _update_zone(self, persons: list[Person], w: int, h: int, now: float, dead: float) -> list[dict]:
         events: list[dict] = []
         poly = np.array(self.zone_px(w, h), dtype=np.float32).reshape(-1, 1, 2)
+        do_count = self.has_task("count")
         for p in persons:
             fx, fy = p.foot_point()
             dist = cv2.pointPolygonTest(poly, (float(fx), float(fy)), True)  # > 0 inside
@@ -179,7 +220,7 @@ class CrossingCounter:
             prev = self._last_side.get(tid)
             if side != 0:
                 cooled = now - self._last_event.get(tid, 0.0) >= COOLDOWN_S
-                if prev is not None and prev != side and cooled:
+                if do_count and prev is not None and prev != side and cooled:
                     if side == 1:
                         self._entered_at[tid] = now
                         events.append(self._count(tid, "in", now))
@@ -205,12 +246,13 @@ class CrossingCounter:
 
     def stats(self) -> dict:
         with self._lock:
-            enabled = self.enabled
             return {
-                "enabled": enabled,
+                "enabled": self.enabled,
+                "ppe_active": self.ppe_active,
                 "mode": self.mode,
-                "inside": self.inside if enabled else None,
-                "outside": self.outside if enabled else None,
+                "tasks": self.tasks(),
+                "inside": self.inside if self.active else None,
+                "outside": self.outside if self.active else None,
                 "entries": self.entries,
                 "exits": self.exits,
                 "events": list(self.events)[:10],
