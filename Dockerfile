@@ -31,7 +31,7 @@ COPY tools ./tools
 # Seed config: copied into the mounted /app/config on first start if files are missing.
 COPY config ./config.default
 # Weights are not in git: on a fresh clone download them and bake the vocabulary (CLIP, needs internet once).
-RUN if [ ! -f models/yolo26n-pose.pt ] || [ ! -f models/yoloe_exhibition.pt ]; then \
+RUN if [ ! -f models/yolo26n-pose.pt ] || [ ! -f models/yolo26n-seg.pt ] || [ ! -f models/yoloe_exhibition.pt ]; then \
         mkdir -p config && cp config.default/vocabulary.json config/ 2>/dev/null || true; \
         python tools/prepare_models.py --device cpu && rm -rf config; \
     fi

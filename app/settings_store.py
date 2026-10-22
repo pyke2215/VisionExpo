@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .paths import PERSON_MODEL_DEFAULT, PPE_MODEL_DEFAULT, SETTINGS_FILE, WORLD_BAKED_MODEL
+from .paths import MASK_MODEL_DEFAULT, PERSON_MODEL_DEFAULT, PPE_MODEL_DEFAULT, SETTINGS_FILE, WORLD_BAKED_MODEL
 
 ZONE_TASKS = ("count", "ppe")
 
@@ -69,6 +69,9 @@ GLOBAL_DEFAULTS: dict[str, Any] = {
         "infer_missing": True,  # report NO-* when the part is visible on the pose but no positive is found
         "require": ["hardhat", "gloves"],  # kinds checked by infer_missing
         "confirm_runs": 3,  # bare in >= N of the last 5 PPE runs (and never positive) → NO-*
+        "person_mask": True,  # glove check on the person's own pixels (yolo26n-seg), not on the chair behind
+        "mask_model": MASK_MODEL_DEFAULT,
+        "mask_imgsz": 640,
         "conf": 0.25,
         "imgsz": 640,
         "every_n": 2,

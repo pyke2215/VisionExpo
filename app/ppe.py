@@ -19,7 +19,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from .paths import PPE_MODEL_DEFAULT, resolve_model
+from .paths import MASK_MODEL_DEFAULT, PPE_MODEL_DEFAULT, resolve_model
 
 # Model class names → (kind, is_negative)
 PPE_CLASSES = {
@@ -62,7 +62,7 @@ def _iou(a, b) -> float:
 # part is clearly visible on the pose keypoints, yet no positive was found on that person for several runs.
 KIND_LABELS = {"hardhat": ("Hardhat", "NO-Hardhat"), "gloves": ("Gloves", "NO-Gloves")}
 HEAD_KPTS = (0, 1, 2, 3, 4)  # nose, eyes, ears
-ARM_KPTS = ((7, 9), (8, 10))  # (elbow, wrist) left / right
+HANDS = (("L", 7, 9), ("R", 8, 10))  # (side, elbow, wrist): each hand is judged on its own
 KPT_VISIBLE = 0.5
 EVIDENCE_WINDOW = 5  # PPE runs remembered per track and kind
 
@@ -79,32 +79,100 @@ def part_boxes(kind: str, kpts, box) -> list[tuple[float, float, float, float]]:
     ph = max(1.0, y2 - y1)
     if kind == "hardhat":
         pts = [p for p in (_kpt(kpts, i) for i in HEAD_KPTS) if p is not None]
-        if len(pts) < 2:
-            return []
-        cx = sum(p[0] for p in pts) / len(pts)
-        cy = sum(p[1] for p in pts) / len(pts)
-        spread = max(max(p[0] for p in pts) - min(p[0] for p in pts), max(p[1] for p in pts) - min(p[1] for p in pts))
-        s = max(spread * 1.6, ph * 0.12, 12.0)
-        return [(cx - s / 2, cy - s * 0.75, cx + s / 2, cy + s * 0.35)]  # extends up: where a hat sits
-    out = []
-    for e_i, w_i in ARM_KPTS:
-        wr = _kpt(kpts, w_i)
-        if wr is None:
-            continue
-        el = _kpt(kpts, e_i)
+        if len(pts) >= 2:
+            cx = sum(p[0] for p in pts) / len(pts)
+            cy = sum(p[1] for p in pts) / len(pts)
+            spread = max(max(p[0] for p in pts) - min(p[0] for p in pts),
+                         max(p[1] for p in pts) - min(p[1] for p in pts))
+            s = max(spread * 1.6, ph * 0.12, 12.0)
+            return [(cx - s / 2, cy - s * 0.75, cx + s / 2, cy + s * 0.35)]  # extends up: where a hat sits
+        head = _head_from_shoulders(kpts, box)  # face turned away: the head still sits on the shoulders
+        return [head] if head is not None else []
+    return [b for b in (hand_box(kpts, box, side) for side, _, _ in HANDS) if b is not None]
+
+
+def hand_box(kpts, box, side: str) -> tuple[float, float, float, float] | None:
+    """Box around one hand ("L" / "R"): the stretch just past the wrist along the forearm; None if not visible."""
+    _, e_i, w_i = next(h for h in HANDS if h[0] == side)
+    wr = _kpt(kpts, w_i)
+    if wr is None:
+        return None
+    el = _kpt(kpts, e_i)
+    if el is not None:
+        fx, fy = wr[0] - el[0], wr[1] - el[1]
+        r = max(0.25 * math.hypot(fx, fy), 6.0)
+        cx, cy = wr[0] + 0.3 * fx, wr[1] + 0.3 * fy
+    else:
+        r = max((box[3] - box[1]) * 0.04, 6.0)
         cx, cy = wr
-        if el is not None:  # the hand continues past the wrist along the forearm
-            cx, cy = wr[0] + 0.35 * (wr[0] - el[0]), wr[1] + 0.35 * (wr[1] - el[1])
-        s = max(ph * 0.1, 12.0)
-        out.append((cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2))
-    return out
+    return cx - r, cy - r, cx + r, cy + r
+
+
+def hand_key(side: str) -> str:
+    """Evidence key of one hand: gloves are tracked per hand, not per person."""
+    return f"gloves_{side}"
+
+
+def hand_state(frame: np.ndarray, box, person_mask=None) -> str | None:
+    """"covered" / "bare" for one hand box; None in the undecided band or when the hand is not on the person.
+
+    `person_mask` = (x0, y0, bool array) from PpeService.person_masks; without it the whole circle is judged.
+    """
+    m = hand_skin(frame, box, person_mask)
+    if m is None:
+        return None
+    skin_all, cover, skin_person = m
+    if person_mask is None:
+        if skin_all >= SKIN_BARE:
+            return "bare"
+        return "covered" if skin_all < SKIN_COVERED else None
+    if cover >= MASK_MIN_COVER:
+        if skin_person >= SKIN_BARE_PERSON:
+            return "bare"
+        return "covered" if skin_person < SKIN_COVERED_PERSON else None
+    return "covered" if skin_all < SKIN_COVERED else None  # hand off the mask: only "no skin anywhere" counts
+
+
+def to_rel(box, owner) -> tuple[float, float, float, float]:
+    """Box in owner-box units (0..1 inside the owner), to redraw it on the owner's next box."""
+    ow, oh = max(1.0, owner[2] - owner[0]), max(1.0, owner[3] - owner[1])
+    return (box[0] - owner[0]) / ow, (box[1] - owner[1]) / oh, (box[2] - owner[0]) / ow, (box[3] - owner[1]) / oh
+
+
+def from_rel(rel, owner) -> tuple[float, float, float, float]:
+    ow, oh = owner[2] - owner[0], owner[3] - owner[1]
+    return owner[0] + rel[0] * ow, owner[1] + rel[1] * oh, owner[0] + rel[2] * ow, owner[1] + rel[3] * oh
+
+
+def _head_from_shoulders(kpts, box) -> tuple[float, float, float, float] | None:
+    """Head box estimated from both shoulders (back / turned-away view), clipped to the person box top."""
+    sl, sr = _kpt(kpts, 5), _kpt(kpts, 6)
+    if sl is None or sr is None:
+        return None
+    sw = abs(sl[0] - sr[0])
+    if sw < 8:
+        return None
+    cx = (sl[0] + sr[0]) / 2.0
+    sy = min(sl[1], sr[1])
+    top = max(box[1], sy - 1.1 * sw)
+    hw = 0.3 * sw
+    return cx - hw, top, cx + hw, max(top + 0.6 * sw, sy - 0.2 * sw)
 
 
 # Appearance check on the part itself. On this camera the model is blind both ways (gloves / hardhat score
-# < 0.04 worn or not), so "no positive seen" says nothing; the pixels do. Measured on the exhibition camera:
-# bare hand box 25-30 % skin, dark gloves 0-7 %.
-SKIN_BARE = 0.15  # >= this share of skin pixels: bare hand
-SKIN_COVERED = 0.10  # < this: covered (glove)
+# < 0.04 worn or not), so "no positive seen" says nothing; the pixels do. Measured on the exhibition camera
+# with the hand circle (wrist + 0.3 forearm, radius 0.25 forearm): bare hands 54-60 % skin, dark gloves
+# 0-2 % (also over the tan leather chair, which a larger box mistook for skin).
+SKIN_BARE = 0.25  # >= this share of skin pixels: bare hand
+SKIN_COVERED = 0.08  # < this: covered (glove)
+# With a person mask (yolo26n-seg on the PPE crop): skin share among the person's own pixels in the hand circle.
+# Measured: bare hands 0.84-0.86, gloves 0.00. The mask often leaves a thin hanging hand out; when under
+# MASK_MIN_COVER of the circle is person, the hand is not judged bare (that is the hand-over-chair case:
+# 0 % person, 34 % "skin" = the leather), but "no skin at all" still means covered.
+MASK_MIN_COVER = 0.2
+SKIN_BARE_PERSON = 0.4
+SKIN_COVERED_PERSON = 0.1
+MASK_MIN_IOU = 0.3  # seg instance must overlap the tracked person box this much to be that person
 CROWN_BARE = 0.5  # crown band (above the eyes) mostly hair / skin: bare head
 CROWN_COVERED = 0.4  # crown band mostly bright or coloured non-skin: hardhat shell
 
@@ -117,19 +185,47 @@ def _skin_mask(region: np.ndarray) -> np.ndarray:
     return (cv2.inRange(ycc, (40, 135, 85), (255, 180, 135)) > 0) & ~vivid_red
 
 
-def _region(frame: np.ndarray, box) -> np.ndarray | None:
-    h, w = frame.shape[:2]
+def _box_px(shape, box) -> tuple[int, int, int, int] | None:
+    h, w = shape[:2]
     x1, y1, x2, y2 = int(max(0, box[0])), int(max(0, box[1])), int(min(w, box[2])), int(min(h, box[3]))
     if x2 - x1 < 4 or y2 - y1 < 4:
         return None
-    return frame[y1:y2, x1:x2]
+    return x1, y1, x2, y2
 
 
-def hand_skin(frame: np.ndarray, box) -> float | None:
-    # core of the hand box only: the margin is mostly whatever the hand rests on
-    cx, cy, half = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2, (box[2] - box[0]) * 0.35
-    reg = _region(frame, (cx - half, cy - half, cx + half, cy + half))
-    return None if reg is None else float(_skin_mask(reg).mean())
+def _region(frame: np.ndarray, box) -> np.ndarray | None:
+    px = _box_px(frame.shape, box)
+    return None if px is None else frame[px[1]:px[3], px[0]:px[2]]
+
+
+def hand_skin(frame: np.ndarray, box, person_mask=None) -> tuple[float, float, float] | None:
+    """(skin share in the hand circle, share of the circle on the person mask, skin share on those pixels).
+
+    The circle is inscribed in the hand box (corners are whatever the hand rests on). Without a mask the
+    last two are 1.0 and the first value.
+    """
+    px = _box_px(frame.shape, box)
+    if px is None:
+        return None
+    x1, y1, x2, y2 = px
+    reg = frame[y1:y2, x1:x2]
+    h, w = reg.shape[:2]
+    circle = np.zeros((h, w), np.uint8)
+    cv2.circle(circle, (w // 2, h // 2), max(1, min(w, h) // 2), 1, -1)
+    inside = circle > 0
+    skin = _skin_mask(reg)
+    skin_all = float(skin[inside].mean())
+    if person_mask is None:
+        return skin_all, 1.0, skin_all
+    mx, my, m = person_mask
+    on = np.zeros((h, w), bool)  # person mask clipped to this region
+    ax1, ay1 = max(x1, mx), max(y1, my)
+    ax2, ay2 = min(x2, mx + m.shape[1]), min(y2, my + m.shape[0])
+    if ax2 > ax1 and ay2 > ay1:
+        on[ay1 - y1:ay2 - y1, ax1 - x1:ax2 - x1] = m[ay1 - my:ay2 - my, ax1 - mx:ax2 - mx]
+    on &= inside
+    cover = float(on.sum() / max(inside.sum(), 1))
+    return skin_all, cover, float(skin[on].mean()) if on.any() else 0.0
 
 
 def crown_box(kpts) -> tuple[float, float, float, float] | None:
@@ -150,9 +246,16 @@ def crown_box(kpts) -> tuple[float, float, float, float] | None:
     return cx - 0.5 * span, ey - 0.75 * span, cx + 0.5 * span, ey - 0.15 * span
 
 
-def crown_cover(frame: np.ndarray, kpts) -> tuple[float, float] | None:
-    """(share bare-looking: hair or skin, share hat-looking: bright or saturated non-skin) in the crown band."""
+def crown_cover(frame: np.ndarray, kpts, person_box=None) -> tuple[float, float] | None:
+    """(share bare-looking: hair or skin, share hat-looking: bright or saturated non-skin) in the crown band.
+
+    Face visible: band above the eyes. Turned away: upper half of the head estimated from the shoulders.
+    """
     box = crown_box(kpts)
+    if box is None and person_box is not None:
+        head = _head_from_shoulders(kpts, person_box)
+        if head is not None:
+            box = (head[0], head[1], head[2], head[1] + 0.5 * (head[3] - head[1]))
     reg = None if box is None else _region(frame, box)
     if reg is None:
         return None
@@ -166,19 +269,21 @@ def crown_cover(frame: np.ndarray, kpts) -> tuple[float, float] | None:
 
 def cover_state(kind: str, frame: np.ndarray, kpts, box) -> str | None:
     """"covered" / "bare" from the pixels of the part, None when undecided or not visible."""
-    if kind == "gloves":
-        skins = [s for s in (hand_skin(frame, b) for b in part_boxes(kind, kpts, box)) if s is not None]
-        if not skins:
-            return None
-        if any(s >= SKIN_BARE for s in skins):
-            return "bare"  # one bare hand is a missing glove
-        return "covered" if all(s < SKIN_COVERED for s in skins) else None
+    if kind == "gloves":  # person summary of the per-hand states (the worker keeps evidence per hand)
+        states = [hand_state(frame, b) for b in part_boxes(kind, kpts, box)]
+        if "bare" in states:
+            return "bare"
+        return "covered" if states and all(st == "covered" for st in states) else None
     if not part_boxes(kind, kpts, box):
         return None
-    cc = crown_cover(frame, kpts)
+    cc = crown_cover(frame, kpts, box)
     if cc is None:
         return None
     bare, shell = cc
+    if crown_box(kpts) is None:
+        # Head placed from the shoulders (face turned away): rough, and on a bent person it lands on the wall
+        # behind, which looks like a bright shell. Only dark hair is trusted there, as "bare".
+        return "bare" if bare >= CROWN_BARE else None
     if shell >= CROWN_COVERED:
         return "covered"
     return "bare" if bare >= CROWN_BARE else None
@@ -189,9 +294,13 @@ class PpeEvidence:
 
     def __init__(self) -> None:
         self.runs: dict[str, deque] = {}
+        self.last_rel: dict[str, tuple] = {}  # key -> last seen part box relative to the person box
 
     def add(self, kind: str, obs: str | None) -> None:
-        self.runs.setdefault(kind, deque(maxlen=EVIDENCE_WINDOW)).append(obs)
+        # A run where the part is hidden (turned away, occluded) says nothing: keep the last judgements,
+        # so the state survives the person turning around instead of fading out.
+        if obs is not None:
+            self.runs.setdefault(kind, deque(maxlen=EVIDENCE_WINDOW)).append(obs)
 
     def missing(self, kind: str, confirm_runs: int) -> float | None:
         """Share of recent runs that saw the part bare, when the negative is confirmed; None otherwise."""
@@ -230,6 +339,8 @@ class PpeService:
         self._state_lock = threading.Lock()
         self.last_infer_ms = 0.0
         self._class_ids: list[int] = []
+        self.seg = None  # person segmentation for the glove check; None = judge the whole hand circle
+        self.last_mask_ms = 0.0
         if self.cfg.get("enabled", True):
             self.ensure_loaded_async()
 
@@ -265,6 +376,7 @@ class PpeService:
                 raise RuntimeError(f"PPE model has none of {sorted(PPE_CLASSES)}; got {list(id_to_name.values())}")
             self.model = model
             self._id_to_name = id_to_name
+            self._load_seg(YOLO)
             self.status = "ready"
             self.error = None
             print(f"[ppe] ready with classes {[id_to_name[i] for i in self._class_ids]} ({name})")
@@ -272,6 +384,57 @@ class PpeService:
             self.status = "error"
             self.error = str(exc)
             print(f"[ppe] load failed: {exc}")
+
+    def _load_seg(self, yolo_cls) -> None:
+        """Optional: a missing / broken mask model only disables the mask, PPE keeps running."""
+        if not self.cfg.get("person_mask", True):
+            return
+        name = self.cfg.get("mask_model") or MASK_MODEL_DEFAULT
+        try:
+            seg = yolo_cls(str(resolve_model(name)))
+            if seg.task != "segment":
+                raise RuntimeError(f"{name} is a {seg.task} model, not segment")
+            self.seg = seg
+            print(f"[ppe] person masks with {name}")
+        except Exception as exc:  # noqa: BLE001
+            self.seg = None
+            print(f"[ppe] person masks off ({name}: {exc})")
+
+    def person_masks(self, frame: np.ndarray, people: list[tuple[int | None, tuple]]) -> dict[int, tuple]:
+        """{track_id: (x0, y0, bool mask)} for each person, from one batched seg pass on the PPE crops.
+
+        Each crop may show several people; the instance overlapping the tracked box most is that person's.
+        """
+        if self.seg is None or not self.cfg.get("person_mask", True) or not people:
+            return {}
+        h, w = frame.shape[:2]
+        crops, metas = [], []
+        for tid, box in people:
+            if tid is None or box[3] - box[1] < MIN_CROP_PX:
+                continue
+            x1, y1, x2, y2 = expand_box(box, w, h)
+            if x2 - x1 < 8 or y2 - y1 < 8:
+                continue
+            crops.append(frame[y1:y2, x1:x2])
+            metas.append((tid, box, x1, y1))
+        if not crops:
+            return {}
+        with self._infer_lock:
+            t0 = time.perf_counter()
+            results = self.seg.predict(source=crops, imgsz=int(self.cfg.get("mask_imgsz", 640)), conf=0.25,
+                                       classes=[0], retina_masks=True, device=self.device, verbose=False)
+            self.last_mask_ms = (time.perf_counter() - t0) * 1000.0
+        out: dict[int, tuple] = {}
+        for res, (tid, box, x0, y0) in zip(results, metas):
+            if res.masks is None or res.boxes is None or len(res.boxes) == 0:
+                continue
+            local = (box[0] - x0, box[1] - y0, box[2] - x0, box[3] - y0)
+            ious = [_iou(tuple(b), local) for b in res.boxes.xyxy.cpu().numpy()]
+            k = int(np.argmax(ious))
+            if ious[k] < MASK_MIN_IOU:
+                continue
+            out[tid] = (x0, y0, res.masks.data[k].cpu().numpy() > 0.5)
+        return out
 
     @property
     def mode(self) -> str:
@@ -374,6 +537,8 @@ class PpeService:
             "error": self.error,
             "model": self.cfg.get("model") or PPE_MODEL_DEFAULT,
             "mode": self.mode,
+            "person_mask": self.seg is not None,
+            "last_mask_ms": round(self.last_mask_ms, 1),
             "required": self.required,
             "classes": [self._id_to_name[i] for i in self._class_ids] if self.model is not None else list(PPE_CLASSES),
             "last_infer_ms": round(self.last_infer_ms, 1),

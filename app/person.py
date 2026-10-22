@@ -7,9 +7,12 @@ from dataclasses import dataclass, field
 import numpy as np
 from ultralytics import YOLO
 
+LEFT_HIP, RIGHT_HIP = 11, 12
+LEFT_KNEE, RIGHT_KNEE = 13, 14
 LEFT_ANKLE = 15
 RIGHT_ANKLE = 16
 KPT_MIN_CONF = 0.35
+KPT_WEAK_CONF = 0.15  # an uncertain ankle is still closer to the floor than the box bottom
 
 
 @dataclass
@@ -26,11 +29,24 @@ class Person:
     ppe_zone: bool = False  # inside the zone of a camera with the ppe task (set each frame)
 
     def foot_point(self) -> tuple[float, float]:
-        """Ankle midpoint if visible, otherwise bottom-center of the box."""
-        if self.keypoints is not None and len(self.keypoints) > RIGHT_ANKLE:
-            pts = [self.keypoints[i] for i in (LEFT_ANKLE, RIGHT_ANKLE) if self.keypoints[i][2] >= KPT_MIN_CONF]
-            if pts:
-                return float(np.mean([p[0] for p in pts])), float(np.mean([p[1] for p in pts]))
+        """Ankle midpoint if visible; else weak ankles; else knees extended by the thigh; else box bottom-center.
+
+        The box bottom jumps (shadows, chairs, frame edge) whenever a turn or bend drops the ankle confidence,
+        which flips the zone side back and forth; the keypoint fallbacks keep the point on the legs.
+        """
+        k = self.keypoints
+        if k is not None and len(k) > RIGHT_ANKLE:
+            for thr in (KPT_MIN_CONF, KPT_WEAK_CONF):
+                pts = [k[i] for i in (LEFT_ANKLE, RIGHT_ANKLE) if k[i][2] >= thr]
+                if pts:
+                    return float(np.mean([p[0] for p in pts])), float(np.mean([p[1] for p in pts]))
+            legs = [(k[h], k[n]) for h, n in ((LEFT_HIP, LEFT_KNEE), (RIGHT_HIP, RIGHT_KNEE))
+                    if k[h][2] >= KPT_MIN_CONF and k[n][2] >= KPT_MIN_CONF]
+            if legs:  # shin ≈ thigh: ankle ≈ knee + (knee - hip)
+                xs = [2 * n[0] - h[0] for h, n in legs]
+                ys = [2 * n[1] - h[1] for h, n in legs]
+                y2 = self.box[3]
+                return float(np.mean(xs)), float(min(np.mean(ys), y2))
         x1, _, x2, y2 = self.box
         return (x1 + x2) / 2.0, y2
 

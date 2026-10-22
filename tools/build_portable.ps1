@@ -108,7 +108,8 @@ foreach ($f in "README.md", "requirements.txt", "start.bat", "start_kiosk.bat") 
 
 $baked = Join-Path $Dist "models\yoloe_exhibition.pt"
 $pose = Join-Path $Dist "models\yolo26n-pose.pt"
-if (-not (Test-Path $baked) -or -not (Test-Path $pose)) {
+$seg = Join-Path $Dist "models\yolo26n-seg.pt"
+if (-not (Test-Path $baked) -or -not (Test-Path $pose) -or -not (Test-Path $seg)) {
     Step "Preparing models inside the package"
     Push-Location $Dist
     Run $PyExe @("tools\prepare_models.py", "--device", $(if ($Cpu) { "cpu" } else { "0" }))

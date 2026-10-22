@@ -116,11 +116,13 @@ Phân loại nguồn (`webcam` / `stream` / `file`), mở bằng OpenCV (RTSP qu
 
 ### `crossing.py` – `CrossingCounter`
 
-- Xét theo **điểm chân** (`Person.foot_point()`: trung điểm hai mắt cá nếu đủ tin cậy, ngược lại đáy giữa box).
+- Xét theo **điểm chân** (`Person.foot_point()`: trung điểm hai mắt cá nếu đủ tin cậy; dự phòng bên dưới).
 - **Vùng đệm** `DEAD_ZONE_FRAC` (0.6% đường chéo khung): điểm nằm trong dải này không đổi phía, tránh nhảy qua lại trên biên.
 - **line**: dấu của tích chéo với đoạn A–B; phía "trong" là phía chứa `inward_point`. Đổi phía và điểm cắt nằm trong đoạn (cho phép lố 10%) → một lượt.
 - **zone**: `cv2.pointPolygonTest` có dấu khoảng cách. Ngoài → trong = `in`, trong → ngoài = `out` kèm `dwell_s`. Track xuất hiện sẵn bên trong: tính là đang ở trong, không phát sinh lượt vào.
 - `COOLDOWN_S = 1`: một track không được đếm hai lần trong 1 giây.
+- `SIDE_CONFIRM_FRAMES = 3`: phía mới phải giữ 3 khung liên tiếp mới được nhận (khung xương rung khi xoay người làm điểm chân nhảy qua biên).
+- Điểm chân dự phòng: mắt cá tin cậy ≥ 0.35 → mắt cá yếu ≥ 0.15 → đầu gối + (đầu gối − hông) → đáy box.
 - `inside` / `outside`: đếm `p.side` của khung hiện tại. `entries` / `exits`: cộng dồn, khôi phục từ DB khi khởi động (`restore_counts`).
 - Đổi cấu hình hình học (mode/points/zone) thì xóa trạng thái các track.
 

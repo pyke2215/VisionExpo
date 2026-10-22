@@ -16,8 +16,8 @@ from .events import EventHub
 from .items import ItemTracker
 from .person import Person, PersonTracker
 from .ppe import (
-    KIND_LABELS, MIN_CROP_PX, SKIN_BARE, PpeEvidence, PpeFinding, PpeService, cover_state, expand_box, hand_skin,
-    part_boxes,
+    HANDS, KIND_LABELS, MIN_CROP_PX, PpeEvidence, PpeFinding, PpeService, cover_state, expand_box, from_rel, hand_box,
+    hand_key, hand_state, part_boxes, to_rel,
 )
 from .world import WorldObject, WorldService
 
@@ -26,6 +26,7 @@ MIN_TRACK_FRAMES = 5  # shorter tracks are flicker, not visitors
 MIN_ITEM_FRAMES = 3  # an item must be shown this many frames to count in the summary
 ALERT_REPEAT_S = 30.0
 PPE_ALERT_REPEAT_S = 8.0
+PPE_ZONE_GRACE_S = 2.0  # a person leaving the PPE zone stays checked this long (border jitter)
 STATE_OF_STATUS = {"running": "online", "offline": "offline", "error": "error", "reconnecting": "reconnecting"}
 
 
@@ -80,6 +81,7 @@ class CameraWorker:
         self.ppe_findings: list[PpeFinding] = []  # model boxes + inferred NO-* (drawn / reported)
         self._ppe_model: list[PpeFinding] = []  # last model boxes only, reused between PPE runs
         self._ppe_evidence: dict[int, PpeEvidence] = {}
+        self._ppe_zone_until: dict[int, float] = {}
         self.items = ItemTracker()
         self._world_tick = 0
         self._ppe_tick = 0
@@ -244,6 +246,7 @@ class CameraWorker:
         for key in [k for k in self._ppe_alerted if k[0] == tid]:
             self._ppe_alerted.pop(key, None)
         self._ppe_evidence.pop(tid, None)
+        self._ppe_zone_until.pop(tid, None)
         if t is None or t["frames"] < MIN_TRACK_FRAMES:
             return
         self._emit({
@@ -336,16 +339,19 @@ class CameraWorker:
         return cv2.pointPolygonTest(poly, (float(cx), float(cy)), False) >= 0
 
     def _person_in_ppe_zone(self, p: Person, w: int, h: int) -> bool:
-        """Foot side == in; while the side is undecided (dead band, new track), body center inside the polygon.
+        """Foot side == in, or body center inside the polygon (feet hidden / beyond a floor-drawn edge).
 
-        A person counted OUT is out for PPE too, so the overlay never shows "OUT PPE".
+        Stays true PPE_ZONE_GRACE_S after the last inside frame: turning or bending makes the foot point
+        jitter across the border, and PPE must not drop (and lose its state) on every flicker.
         """
-        if p.track_id is None or p.side == "out":
+        if p.track_id is None:
             return False
-        if p.side == "in":
-            return True
+        now = time.time()
         x1, y1, x2, y2 = p.box
-        return self._ppe_in_zone((x1 + x2) / 2.0, (y1 + y2) / 2.0, w, h)
+        if p.side == "in" or self._ppe_in_zone((x1 + x2) / 2.0, (y1 + y2) / 2.0, w, h):
+            self._ppe_zone_until[p.track_id] = now + PPE_ZONE_GRACE_S
+            return True
+        return now < self._ppe_zone_until.get(p.track_id, 0.0)
 
     def _assign_ppe(self, findings: list[PpeFinding], persons: list[Person], w: int, h: int) -> list[PpeFinding]:
         """Attach findings to persons inside the zone; drop the rest unless their own center is in the zone.
@@ -387,7 +393,8 @@ class CameraWorker:
             kept.append(f)
         return kept
 
-    def _update_evidence(self, frame: np.ndarray, persons: list[Person], required: list[str]) -> None:
+    def _update_evidence(self, frame: np.ndarray, persons: list[Person], required: list[str],
+                         masks: dict[int, tuple] | None = None) -> None:
         """After a PPE run: per in-zone person and required kind, is the part worn ("pos"), bare ("neg") or unknown?
 
         A model positive wins; otherwise the pixels of the part decide (cover_state): the model is blind to
@@ -400,9 +407,15 @@ class CameraWorker:
             scanned = p.box[3] - p.box[1] >= MIN_CROP_PX  # smaller persons are skipped by the crop pass
             for kind in required:
                 found = [f for f in p.ppe if f.kind == kind and not f.inferred]
+                if kind == "gloves":
+                    self._update_hands(frame, p, ev, found, scanned, (masks or {}).get(p.track_id))
+                    continue
                 if any(not f.alert for f in found):
                     ev.add(kind, "pos")
                     continue
+                pb = part_boxes(kind, p.keypoints, p.box)
+                if pb:
+                    ev.last_rel[kind] = to_rel(pb[0], p.box)
                 state = cover_state(kind, frame, p.keypoints, p.box) if scanned else None
                 if state == "covered":
                     ev.add(kind, "pos")
@@ -410,6 +423,30 @@ class CameraWorker:
                     ev.add(kind, "neg")  # bare-looking part, or a model NO-* box
                 else:
                     ev.add(kind, None)
+
+    @staticmethod
+    def _update_hands(frame: np.ndarray, p: Person, ev: PpeEvidence, found: list[PpeFinding], scanned: bool,
+                      mask=None) -> None:
+        """Glove evidence per hand: one hand misread no longer decides for both; with the person mask only the
+        person's own pixels count, so a skin-coloured chair / desk behind the hand is not read as skin."""
+        for side, _, _ in HANDS:
+            key = hand_key(side)
+            hb = hand_box(p.keypoints, p.box, side)
+            if hb is None:
+                ev.add(key, None)
+                continue
+            ev.last_rel[key] = to_rel(hb, p.box)
+            hw = hb[2] - hb[0]
+            near = [f for f in found  # model boxes whose center falls on this hand (box doubled)
+                    if hb[0] - hw / 2 <= (f.box[0] + f.box[2]) / 2 <= hb[2] + hw / 2
+                    and hb[1] - hw / 2 <= (f.box[1] + f.box[3]) / 2 <= hb[3] + hw / 2]
+            state = hand_state(frame, hb, mask) if scanned else None
+            if any(not f.alert for f in near) or state == "covered":
+                ev.add(key, "pos")
+            elif state == "bare" or near:
+                ev.add(key, "neg")
+            else:
+                ev.add(key, None)
 
     def _infer_missing(self, frame: np.ndarray, persons: list[Person], required: list[str],
                        confirm_runs: int) -> list[PpeFinding]:
@@ -426,16 +463,20 @@ class CameraWorker:
             for kind in required:
                 if any(f.kind == kind for f in p.ppe):
                     continue
-                share = ev.missing(kind, confirm_runs)
-                worn = None if share is not None else ev.worn(kind, confirm_runs)
-                if share is None and worn is None:
-                    continue
-                boxes = part_boxes(kind, p.keypoints, p.box)
-                if kind == "gloves" and share is not None:  # box only the hands that look bare now
-                    bare = [b for b in boxes if (hand_skin(frame, b) or 0.0) >= SKIN_BARE]
-                    boxes = bare or boxes
-                pos_label, neg_label = KIND_LABELS[kind]
-                for box in boxes:
+                if kind == "gloves":  # each hand on its own evidence: one gloved and one bare hand shows both
+                    parts = [(hand_key(side), hand_box(p.keypoints, p.box, side)) for side, _, _ in HANDS]
+                else:
+                    parts = [(kind, b) for b in part_boxes(kind, p.keypoints, p.box)] or [(kind, None)]
+                for key, box in parts:
+                    share = ev.missing(key, confirm_runs)
+                    worn = None if share is not None else ev.worn(key, confirm_runs)
+                    if share is None and worn is None:
+                        continue
+                    if box is None and key in ev.last_rel:  # hidden right now: last place seen on this person
+                        box = from_rel(ev.last_rel[key], p.box)
+                    if box is None:
+                        continue
+                    pos_label, neg_label = KIND_LABELS[kind]
                     f = PpeFinding(label=neg_label if share is not None else pos_label,
                                    conf=share if share is not None else worn, box=box, alert=share is not None,
                                    kind=kind, owner=p.track_id, inferred=True)
@@ -508,13 +549,15 @@ class CameraWorker:
         if ppe_on:
             every_n = max(1, int(self.ppe_svc.cfg.get("every_n", 3)))
             if self._ppe_tick % every_n == 0:
+                targets = [(p.track_id, p.box) for p in persons if self._person_in_ppe_zone(p, w, h)]
                 if self.ppe_svc.mode == "crop":
-                    targets = [(p.track_id, p.box) for p in persons if self._person_in_ppe_zone(p, w, h)]
                     found = self.ppe_svc.detect_people(frame, targets)
                 else:
                     found = self.ppe_svc.detect(frame)
                 ppe_findings = self._assign_ppe(found, persons, w, h)
-                self._update_evidence(frame, persons, self.ppe_svc.required)
+                required = self.ppe_svc.required
+                masks = self.ppe_svc.person_masks(frame, targets) if "gloves" in required else {}
+                self._update_evidence(frame, persons, required, masks)
             else:
                 # Refresh owner flags on current persons from last findings (sides may have changed)
                 ppe_findings = self._assign_ppe(ppe_findings, persons, w, h)

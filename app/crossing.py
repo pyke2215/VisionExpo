@@ -30,6 +30,7 @@ from .person import Person
 SEGMENT_SLACK = 0.1  # accept crossings slightly beyond the segment ends (fraction of length)
 DEAD_ZONE_FRAC = 0.006  # band around the line / zone border (fraction of frame diagonal) where side is undecided
 COOLDOWN_S = 1.0  # ignore repeated flips of the same track within this window
+SIDE_CONFIRM_FRAMES = 3  # a new side must hold this many frames in a row (keypoint jitter on a turn)
 STALE_TRACK_S = 30.0
 MAX_ZONE_POINTS = 32
 ALLOWED_TASKS = frozenset({"count", "ppe"})
@@ -69,6 +70,7 @@ class CrossingCounter:
         self.outside = 0
         self.events: deque[dict] = deque(maxlen=30)
         self._last_side: dict[int, int] = {}
+        self._pending: dict[int, tuple[int, int]] = {}  # tid -> (candidate side, frames seen)
         self._last_seen: dict[int, float] = {}
         self._last_event: dict[int, float] = {}
         self._entered_at: dict[int, float] = {}
@@ -115,6 +117,7 @@ class CrossingCounter:
 
     def _clear_tracks(self) -> None:
         self._last_side.clear()
+        self._pending.clear()
         self._last_event.clear()
         self._entered_at.clear()
         self.inside = 0
@@ -194,6 +197,8 @@ class CrossingCounter:
                 continue
             self._last_seen[tid] = now
             prev = self._last_side.get(tid)
+            if side != 0 and not self._settled(tid, side, prev):
+                side = 0  # not confirmed yet: keep the previous side this frame
             if side != 0:
                 within = -SEGMENT_SLACK <= t <= 1.0 + SEGMENT_SLACK
                 cooled = now - self._last_event.get(tid, 0.0) >= COOLDOWN_S
@@ -218,6 +223,8 @@ class CrossingCounter:
                 continue
             self._last_seen[tid] = now
             prev = self._last_side.get(tid)
+            if side != 0 and not self._settled(tid, side, prev):
+                side = 0  # not confirmed yet: keep the previous side this frame
             if side != 0:
                 cooled = now - self._last_event.get(tid, 0.0) >= COOLDOWN_S
                 if do_count and prev is not None and prev != side and cooled:
@@ -235,12 +242,26 @@ class CrossingCounter:
             p.side = "unknown" if cur is None else ("in" if cur == 1 else "out")
         return events
 
+    def _settled(self, tid: int, side: int, prev: int | None) -> bool:
+        """True when `side` may replace `prev`: same side, first reading, or held SIDE_CONFIRM_FRAMES frames."""
+        if prev is None or side == prev:
+            self._pending.pop(tid, None)
+            return True
+        cand, n = self._pending.get(tid, (side, 0))
+        n = n + 1 if cand == side else 1
+        if n >= SIDE_CONFIRM_FRAMES:
+            self._pending.pop(tid, None)
+            return True
+        self._pending[tid] = (side, n)
+        return False
+
     def _purge_stale(self, now: float) -> None:
         if len(self._last_seen) <= 300:
             return
         for t in [t for t, ts in self._last_seen.items() if now - ts > STALE_TRACK_S]:
             self._last_seen.pop(t, None)
             self._last_side.pop(t, None)
+            self._pending.pop(t, None)
             self._last_event.pop(t, None)
             self._entered_at.pop(t, None)
 

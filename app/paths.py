@@ -19,6 +19,7 @@ PERSON_MODEL_DEFAULT = "yolo26n-pose.pt"
 WORLD_BASE_MODEL = "yoloe-26l-seg.pt"  # open-vocabulary detector; a "-world" model (yolov8s-worldv2.pt) also works
 WORLD_BAKED_MODEL = "yoloe_exhibition.pt"
 PPE_MODEL_DEFAULT = "yolo_ppe.pt"  # Hardhat / Gloves (+ NO-* negatives)
+MASK_MODEL_DEFAULT = "yolo26n-seg.pt"  # person masks for the glove check (pixels of the person only)
 
 
 def resolve_model(name: str) -> Path | str:

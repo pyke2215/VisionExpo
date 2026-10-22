@@ -18,7 +18,7 @@ Chạy trên chính máy mang đi triển lãm (môi trường Python không cop
 1. Cài Python 3.10–3.12 (tick "Add to PATH") và Git (để cài CLIP).
 2. Double-click `setup.bat`. Script tự:
    - tạo `.venv`, cài PyTorch (bản CUDA nếu có GPU NVIDIA, ngược lại bản CPU) và thư viện;
-   - tải `yolo26n-pose.pt` (hoặc copy từ `../Production/models`), `yoloe-26l-seg.pt` và bộ mã hóa chữ `mobileclip2_b.ts`;
+   - tải `yolo26n-pose.pt` (hoặc copy từ `../Production/models`), `yolo26n-seg.pt` (mask người cho PPE), `yoloe-26l-seg.pt` và bộ mã hóa chữ `mobileclip2_b.ts`;
    - mã hóa sẵn bộ từ vựng đồ vật vào `models/yoloe_exhibition.pt` (sau bước này chạy offline được).
 
 ## Đóng gói mang sang máy khác (bản portable, khuyên dùng)
@@ -130,7 +130,8 @@ Model: `yoloe-26l-seg.pt` (YOLOE, thế hệ sau của YOLO-World). Đo trên 30
 | `world.reject_static` | Bỏ vật nằm yên khi không ai mang, hoặc đứng yên khi người di chuyển |
 | `ppe.enabled`, `ppe.conf`, `ppe.imgsz`, `ppe.every_n` | Model PPE (`yolo_ppe.pt`): bật/tắt, ngưỡng (mặc định 0.25; điểm `NO-Hardhat` thường chỉ 0.3–0.6), kích thước suy luận, chạy mỗi N khung. Sửa nóng qua `PUT /api/ppe` |
 | `ppe.mode` | `"crop"` (mặc định: cắt khung từng người trong vùng, phóng lên `imgsz`, chạy theo batch) hoặc `"frame"` (một lần trên cả khung: nhanh hơn nhưng đầu/tay người ở xa quá nhỏ, gần như không nhận được) |
-| `ppe.infer_missing`, `ppe.require`, `ppe.confirm_runs` | Suy ra PPE (mặc định bật, `["hardhat","gloves"]`, 3). Model `yolo_ppe.pt` gần như mù trên camera triển lãm (cả có lẫn thiếu đều < 0.04), nên mỗi lần chạy PPE app tự xét điểm ảnh của bộ phận lấy từ khung xương: **tay** – tỉ lệ pixel màu da (tay trần 25–30 %, găng tối 0–7 %); **đầu** – dải trán/đỉnh đầu trên mắt là tóc/da (đầu trần) hay vỏ sáng/màu (mũ). ≥ N trong 5 lần gần nhất "trần" và không lần nào "có" → `NO-*`; ≥ N lần "có" → `Hardhat` / `Gloves`. Box vẽ theo khung xương, `inferred: true`. Giới hạn: găng màu da, mũ đen, người tóc sáng / hói có thể bị đọc sai |
+| `ppe.person_mask`, `ppe.mask_imgsz` | Mask người cho phép xét găng (mặc định bật, 640). Thiếu file `yolo26n-seg.pt` thì tự tắt, PPE vẫn chạy (xét cả vòng tròn tay) |
+| `ppe.infer_missing`, `ppe.require`, `ppe.confirm_runs` | Suy ra PPE (mặc định bật, `["hardhat","gloves"]`, 3). Model `yolo_ppe.pt` gần như mù trên camera triển lãm (cả có lẫn thiếu đều < 0.04), nên mỗi lần chạy PPE app tự xét điểm ảnh của bộ phận lấy từ khung xương: **tay** – tỉ lệ pixel màu da trong vòng tròn ngay sau cổ tay theo hướng cẳng tay (tay trần 54–60 %, găng tối 0–2 %); **đầu** – dải trán/đỉnh đầu trên mắt là tóc/da (đầu trần) hay vỏ sáng/màu (mũ). Có mask người (`yolo26n-seg.pt`) thì chỉ đo pixel thuộc người trong vòng tròn tay (tay trần 84–86 % da, găng 0 %); tay nằm ngoài mask (< 20 % vòng tròn, vd tay trước ghế da) không bị kết luận trần. Mỗi tay có bằng chứng riêng. ≥ N trong 5 lần gần nhất "trần" và không lần nào "có" → `NO-*` (trên đúng tay đó); ≥ N lần "có" → `Hardhat` / `Gloves`. Lần chạy không thấy bộ phận (quay lưng, bị che) không xóa kết quả cũ, nên quay người không mất trạng thái. Box vẽ theo khung xương, `inferred: true`. Giới hạn: găng màu da, mũ đen, người tóc sáng / hói có thể bị đọc sai |
 | `cameras[].source` | RTSP URL, số webcam (`0`), hoặc đường dẫn file video (tự lặp) |
 | `cameras[].conf`, `imgsz`, `process_fps` | Ngưỡng phát hiện người, kích thước suy luận, FPS xử lý tối đa |
 | `cameras[].stream_width`, `jpeg_quality` | Độ phân giải / chất lượng luồng xem |

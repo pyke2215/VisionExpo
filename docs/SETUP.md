@@ -16,7 +16,7 @@ Mọi lệnh bên dưới chạy trong thư mục `Exhibition/`.
 
 | Đường dẫn | Là gì | Được tạo bởi |
 |---|---|---|
-| `models/*.pt` | Model người `yolo26n-pose.pt` (8 MB), model đồ vật gốc `yoloe-26l-seg.pt` (~70 MB), từ vựng đã mã hóa `yoloe_exhibition.pt` + chữ ký `yoloe_exhibition.json`, PPE `yolo_ppe.pt` (Hardhat/Gloves) | `setup.bat` / `docker compose build` tải YOLO*; `yolo_ppe.pt` copy tay vào `models/` |
+| `models/*.pt` | Model người `yolo26n-pose.pt` (8 MB), mask người cho PPE `yolo26n-seg.pt` (6 MB), model đồ vật gốc `yoloe-26l-seg.pt` (~70 MB), từ vựng đã mã hóa `yoloe_exhibition.pt` + chữ ký `yoloe_exhibition.json`, PPE `yolo_ppe.pt` (Hardhat/Gloves) | `setup.bat` / `docker compose build` tải YOLO*; `yolo_ppe.pt` copy tay vào `models/` |
 | `models/mobileclip2_b.ts` | Bộ mã hóa chữ MobileCLIP (~240 MB), chỉ cần khi thêm / đổi từ vựng | Như trên |
 | `config/settings.json` | Danh sách camera (có mật khẩu RTSP), line/vùng, mọi thông số | App tự tạo lần chạy đầu, sau đó chỉnh trên web |
 | `data/` | Database SQLite | App tự tạo |

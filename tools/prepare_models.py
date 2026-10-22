@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app.paths import (  # noqa: E402
+    MASK_MODEL_DEFAULT,
     MODELS_DIR,
     PERSON_MODEL_DEFAULT,
     VOCABULARY_FILE,
@@ -39,6 +40,18 @@ def ensure_person_model() -> None:
     from ultralytics import YOLO
 
     YOLO(PERSON_MODEL_DEFAULT)  # downloads into cwd (= models/)
+    print(f"[ok] downloaded {target.name}")
+
+
+def ensure_mask_model() -> None:
+    """yolo26n-seg.pt: person masks for the PPE glove check (the app runs without it, less accurately)."""
+    target = MODELS_DIR / MASK_MODEL_DEFAULT
+    if target.is_file():
+        print(f"[ok] {target.name} already present")
+        return
+    from ultralytics import YOLO
+
+    YOLO(MASK_MODEL_DEFAULT)  # downloads into cwd (= models/)
     print(f"[ok] downloaded {target.name}")
 
 
@@ -69,6 +82,7 @@ def main() -> None:
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     os.chdir(MODELS_DIR)
     ensure_person_model()
+    ensure_mask_model()
     if not args.skip_world:
         ensure_world(args.device)
     print("[done] models ready in", MODELS_DIR)

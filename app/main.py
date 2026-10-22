@@ -440,11 +440,14 @@ def create_app(device: str | None = None) -> FastAPI:
 
     @app.put("/api/ppe")
     def api_update_ppe(payload: dict = Body(...)):
-        allowed = {"enabled", "mode", "conf", "imgsz", "every_n", "infer_missing", "require", "confirm_runs"}
+        allowed = {"enabled", "mode", "conf", "imgsz", "every_n", "infer_missing", "require", "confirm_runs",
+                   "person_mask", "mask_imgsz"}
         patch = {k: v for k, v in payload.items() if k in allowed}
         if "mode" in patch and patch["mode"] not in ("crop", "frame"):
             raise HTTPException(400, "mode must be 'crop' or 'frame'")
-        for key in ("enabled", "infer_missing"):
+        if "mask_imgsz" in patch:
+            patch["mask_imgsz"] = int(min(max(int(patch["mask_imgsz"]), 160), 1280)) // 32 * 32
+        for key in ("enabled", "infer_missing", "person_mask"):
             if key in patch:
                 patch[key] = bool(patch[key])
         if "require" in patch:
