@@ -8,6 +8,7 @@ Detections are already filtered by the per-label thresholds, so every box counts
 from __future__ import annotations
 
 import itertools
+import sys
 from types import SimpleNamespace
 
 import numpy as np
@@ -18,6 +19,7 @@ MATCH_THRESH = 0.8  # IoU distance: a track continues with a box overlapping its
 
 
 class _ObjTrack(STrack):
+    # Fallback for older Ultralytics that still use a class-level counter on STrack.
     _ids = itertools.count(1)
 
     @staticmethod
@@ -28,9 +30,10 @@ class _ObjTrack(STrack):
 class _ObjByteTracker(BYTETracker):
     track_class = _ObjTrack
 
-    @staticmethod
-    def reset_id() -> None:
-        pass
+    def reset_id(self) -> None:
+        # Ultralytics 8.4+ keeps IDs on the tracker (`self._ids`) and never shares them with
+        # person ByteTrack. Do not call BaseTrack.reset_id() — that would renumber people.
+        self._ids = iter(range(1, sys.maxsize))
 
 
 class _Dets:
