@@ -15,7 +15,10 @@ from .draw import attach_objects, render
 from .events import EventHub
 from .items import ItemTracker
 from .person import Person, PersonTracker
-from .ppe import KIND_LABELS, MIN_CROP_PX, PpeEvidence, PpeFinding, PpeService, expand_box, part_boxes
+from .ppe import (
+    KIND_LABELS, MIN_CROP_PX, SKIN_BARE, PpeEvidence, PpeFinding, PpeService, cover_state, expand_box, hand_skin,
+    part_boxes,
+)
 from .world import WorldObject, WorldService
 
 TRACK_END_S = 3.0  # a track unseen this long is considered gone and summarized
@@ -333,8 +336,11 @@ class CameraWorker:
         return cv2.pointPolygonTest(poly, (float(cx), float(cy)), False) >= 0
 
     def _person_in_ppe_zone(self, p: Person, w: int, h: int) -> bool:
-        """Foot side == in, or body center inside the polygon (covers dead-band / feet outside)."""
-        if p.track_id is None:
+        """Foot side == in; while the side is undecided (dead band, new track), body center inside the polygon.
+
+        A person counted OUT is out for PPE too, so the overlay never shows "OUT PPE".
+        """
+        if p.track_id is None or p.side == "out":
             return False
         if p.side == "in":
             return True
@@ -381,8 +387,12 @@ class CameraWorker:
             kept.append(f)
         return kept
 
-    def _update_evidence(self, persons: list[Person], required: list[str]) -> None:
-        """After a PPE run: per in-zone person and required kind, was the part visible and was a positive found?"""
+    def _update_evidence(self, frame: np.ndarray, persons: list[Person], required: list[str]) -> None:
+        """After a PPE run: per in-zone person and required kind, is the part worn ("pos"), bare ("neg") or unknown?
+
+        A model positive wins; otherwise the pixels of the part decide (cover_state): the model is blind to
+        PPE on this camera, so "no positive found" alone must not count as bare.
+        """
         for p in persons:
             if p.track_id is None or not p.ppe_zone:
                 continue
@@ -392,13 +402,22 @@ class CameraWorker:
                 found = [f for f in p.ppe if f.kind == kind and not f.inferred]
                 if any(not f.alert for f in found):
                     ev.add(kind, "pos")
-                elif found or (scanned and part_boxes(kind, p.keypoints, p.box)):
-                    ev.add(kind, "neg")  # model NO-* box, or part clearly visible with no positive on it
+                    continue
+                state = cover_state(kind, frame, p.keypoints, p.box) if scanned else None
+                if state == "covered":
+                    ev.add(kind, "pos")
+                elif state == "bare" or found:
+                    ev.add(kind, "neg")  # bare-looking part, or a model NO-* box
                 else:
                     ev.add(kind, None)
 
-    def _infer_missing(self, persons: list[Person], required: list[str], confirm_runs: int) -> list[PpeFinding]:
-        """Inferred NO-* for in-zone persons whose evidence confirms a missing item, boxed on current keypoints."""
+    def _infer_missing(self, frame: np.ndarray, persons: list[Person], required: list[str],
+                       confirm_runs: int) -> list[PpeFinding]:
+        """Inferred findings for in-zone persons from their evidence, boxed on the current keypoints.
+
+        Confirmed bare → NO-* (alert); confirmed worn by appearance → the positive label, so the dashboard shows
+        "worn" even though the model never boxed it. Kinds the model reported this run are left to the model.
+        """
         out: list[PpeFinding] = []
         for p in persons:
             ev = self._ppe_evidence.get(p.track_id) if p.track_id is not None and p.ppe_zone else None
@@ -406,15 +425,22 @@ class CameraWorker:
                 continue
             for kind in required:
                 if any(f.kind == kind for f in p.ppe):
-                    continue  # the model already reported this kind on the person (positive or NO-*)
-                share = ev.missing(kind, confirm_runs)
-                if share is None:
                     continue
-                for box in part_boxes(kind, p.keypoints, p.box):
-                    f = PpeFinding(label=KIND_LABELS[kind][1], conf=share, box=box, alert=True, kind=kind,
-                                   owner=p.track_id, inferred=True)
+                share = ev.missing(kind, confirm_runs)
+                worn = None if share is not None else ev.worn(kind, confirm_runs)
+                if share is None and worn is None:
+                    continue
+                boxes = part_boxes(kind, p.keypoints, p.box)
+                if kind == "gloves" and share is not None:  # box only the hands that look bare now
+                    bare = [b for b in boxes if (hand_skin(frame, b) or 0.0) >= SKIN_BARE]
+                    boxes = bare or boxes
+                pos_label, neg_label = KIND_LABELS[kind]
+                for box in boxes:
+                    f = PpeFinding(label=neg_label if share is not None else pos_label,
+                                   conf=share if share is not None else worn, box=box, alert=share is not None,
+                                   kind=kind, owner=p.track_id, inferred=True)
                     p.ppe.append(f)
-                    p.ppe_alert = True
+                    p.ppe_alert = p.ppe_alert or f.alert
                     out.append(f)
         return out
 
@@ -488,13 +514,15 @@ class CameraWorker:
                 else:
                     found = self.ppe_svc.detect(frame)
                 ppe_findings = self._assign_ppe(found, persons, w, h)
-                self._update_evidence(persons, self.ppe_svc.required)
+                self._update_evidence(frame, persons, self.ppe_svc.required)
             else:
                 # Refresh owner flags on current persons from last findings (sides may have changed)
                 ppe_findings = self._assign_ppe(ppe_findings, persons, w, h)
             self._ppe_tick += 1
             self._ppe_model = ppe_findings
-            ppe_findings = ppe_findings + self._infer_missing(persons, self.ppe_svc.required, self.ppe_svc.confirm_runs)
+            ppe_findings = ppe_findings + self._infer_missing(
+                frame, persons, self.ppe_svc.required, self.ppe_svc.confirm_runs
+            )
         else:
             self._ppe_model = []
             ppe_findings = []

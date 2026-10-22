@@ -124,8 +124,8 @@ flowchart LR
   pred --> map["dời box về tọa độ khung, giữ nếu tâm nằm trong crop của chính người đó"]
   map --> dd["_dedup: cùng kind, IoU≥0.5 → giữ conf cao (Hardhat vs NO-Hardhat)"]
   dd --> asg["worker._assign_ppe: giữ owner nếu vẫn trong vùng; không thì box người nới rộng nhỏ nhất; vô chủ chỉ giữ nếu tâm trong polygon"]
-  asg -->|"chỉ lần chạy PPE"| evd["_update_evidence → PpeEvidence/track: pos | neg (part_boxes thấy, không có dương) | None"]
-  asg --> inf["_infer_missing (mỗi khung): ≥ confirm_runs neg / 5, không pos → NO-* inferred, box từ keypoint hiện tại"]
+  asg -->|"chỉ lần chạy PPE"| evd["_update_evidence → PpeEvidence/track: pos (model dương HOẶC cover_state=covered) | neg (cover_state=bare hoặc model NO-*) | None"]
+  asg --> inf["_infer_missing (mỗi khung): ≥ confirm_runs neg / 5, không pos → NO-*; ≥ confirm_runs pos → Hardhat/Gloves; inferred, box từ keypoint hiện tại"]
   evd --> inf
   inf --> out1["people[].ppe, ppe_alert (WS people)"]
   inf --> out2["sự kiện ppe_alert (8s / người / tổ hợp)"]
@@ -133,7 +133,7 @@ flowchart LR
   inf --> out4["stats: ppe, ppe_alerts, people[].ppe (/api/status) → Live: KPI Thiếu PPE, panel PPE, tag người"]
 ```
 
-Vì sao suy ra âm: lớp `NO-Hardhat` của `yolo_ppe.pt` cho < 0.03 với người đầu trần nhìn rõ trên camera triển lãm; lớp dương mới đáng tin. `worker._ppe_model` giữ riêng box model (dùng lại giữa các lần chạy), `worker.ppe_findings` = box model + box suy ra. Bằng chứng xóa khi track kết thúc.
+Vì sao suy ra: `yolo_ppe.pt` mù trên camera triển lãm cả hai chiều (đầu trần rõ: `NO-Hardhat` < 0.03; đeo găng tối: `Gloves` < 0.04), nên "model không thấy dương" không nói lên gì. `ppe.cover_state()` xét pixel: tay = tỉ lệ da trong lõi box tay (`SKIN_BARE` 0.15 / `SKIN_COVERED` 0.10, bỏ pixel đỏ rực như mặt bàn đỏ); đầu = `crown_box` (dải trên mắt, rộng tai–tai) tóc/da vs vỏ sáng/màu (`CROWN_BARE` 0.5 / `CROWN_COVERED` 0.4). Người bị tính OUT không xét PPE (`_person_in_ppe_zone`). Ngưỡng đo trên ảnh chụp dashboard (có lớp màu xanh của vùng), cần kiểm lại trên khung gốc. `worker._ppe_model` giữ riêng box model (dùng lại giữa các lần chạy), `worker.ppe_findings` = box model + box suy ra. Bằng chứng xóa khi track kết thúc.
 
 Điều kiện PPE chạy (tất cả phải đúng): `ppe.enabled`, model `ready`, camera `crossing.mode == "zone"`, `"ppe" in tasks`, polygon ≥ 3 điểm, `detect_enabled` (cần người). HUD hiện `PPE off (<status>)` khi camera có task ppe nhưng service chưa sẵn sàng.
 

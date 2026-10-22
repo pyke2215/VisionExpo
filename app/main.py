@@ -48,6 +48,15 @@ def create_app(device: str | None = None) -> FastAPI:
     app.state.manager = manager
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
+    @app.middleware("http")
+    async def revalidate_static(request: Request, call_next):
+        # Without it browsers heuristically cache js/css and keep running old code after an update
+        # (new HTML, old live.js). no-cache = revalidate each load; unchanged files answer 304.
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     def _worker_or_404(cam_id: str):
         w = manager.worker(cam_id)
         if w is None:

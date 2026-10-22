@@ -10,11 +10,13 @@ finds nothing; on the crop it is ~4x larger. mode "frame": a single pass on the 
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 
 from .paths import PPE_MODEL_DEFAULT, resolve_model
@@ -98,6 +100,90 @@ def part_boxes(kind: str, kpts, box) -> list[tuple[float, float, float, float]]:
     return out
 
 
+# Appearance check on the part itself. On this camera the model is blind both ways (gloves / hardhat score
+# < 0.04 worn or not), so "no positive seen" says nothing; the pixels do. Measured on the exhibition camera:
+# bare hand box 25-30 % skin, dark gloves 0-7 %.
+SKIN_BARE = 0.15  # >= this share of skin pixels: bare hand
+SKIN_COVERED = 0.10  # < this: covered (glove)
+CROWN_BARE = 0.5  # crown band (above the eyes) mostly hair / skin: bare head
+CROWN_COVERED = 0.4  # crown band mostly bright or coloured non-skin: hardhat shell
+
+
+def _skin_mask(region: np.ndarray) -> np.ndarray:
+    ycc = cv2.cvtColor(region, cv2.COLOR_BGR2YCrCb)
+    hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+    h, s = hsv[..., 0], hsv[..., 1]
+    vivid_red = (s > 150) & ((h < 8) | (h > 170))  # red desks / objects fall in the YCrCb skin range; skin is less saturated
+    return (cv2.inRange(ycc, (40, 135, 85), (255, 180, 135)) > 0) & ~vivid_red
+
+
+def _region(frame: np.ndarray, box) -> np.ndarray | None:
+    h, w = frame.shape[:2]
+    x1, y1, x2, y2 = int(max(0, box[0])), int(max(0, box[1])), int(min(w, box[2])), int(min(h, box[3]))
+    if x2 - x1 < 4 or y2 - y1 < 4:
+        return None
+    return frame[y1:y2, x1:x2]
+
+
+def hand_skin(frame: np.ndarray, box) -> float | None:
+    # core of the hand box only: the margin is mostly whatever the hand rests on
+    cx, cy, half = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2, (box[2] - box[0]) * 0.35
+    reg = _region(frame, (cx - half, cy - half, cx + half, cy + half))
+    return None if reg is None else float(_skin_mask(reg).mean())
+
+
+def crown_box(kpts) -> tuple[float, float, float, float] | None:
+    """Band just above the eyes, ear to ear: forehead / hair when bare, the shell of a hardhat when worn."""
+    pts = [p for p in (_kpt(kpts, i) for i in HEAD_KPTS) if p is not None]
+    if len(pts) < 2:
+        return None
+    eyes = [p for p in (_kpt(kpts, 1), _kpt(kpts, 2)) if p is not None]
+    ears = [p for p in (_kpt(kpts, 3), _kpt(kpts, 4)) if p is not None]
+    xs = [p[0] for p in pts]
+    if len(ears) == 2:
+        span = abs(ears[0][0] - ears[1][0])  # frontal / back: ear to ear = head width
+    else:  # profile: nose-to-ear spread is ~2/3 of the head width
+        span = 1.6 * max(max(xs) - min(xs), math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1]))
+    span = max(span, 10.0)
+    cx = (min(xs) + max(xs)) / 2.0
+    ey = min(p[1] for p in eyes) if eyes else min(p[1] for p in pts) - 0.1 * span
+    return cx - 0.5 * span, ey - 0.75 * span, cx + 0.5 * span, ey - 0.15 * span
+
+
+def crown_cover(frame: np.ndarray, kpts) -> tuple[float, float] | None:
+    """(share bare-looking: hair or skin, share hat-looking: bright or saturated non-skin) in the crown band."""
+    box = crown_box(kpts)
+    reg = None if box is None else _region(frame, box)
+    if reg is None:
+        return None
+    hsv = cv2.cvtColor(reg, cv2.COLOR_BGR2HSV)
+    s, v = hsv[..., 1], hsv[..., 2]
+    skin = _skin_mask(reg)
+    dark = v < 80
+    shell = ~skin & ~dark & ((s > 100) | (v > 180))
+    return float((skin | dark).mean()), float(shell.mean())
+
+
+def cover_state(kind: str, frame: np.ndarray, kpts, box) -> str | None:
+    """"covered" / "bare" from the pixels of the part, None when undecided or not visible."""
+    if kind == "gloves":
+        skins = [s for s in (hand_skin(frame, b) for b in part_boxes(kind, kpts, box)) if s is not None]
+        if not skins:
+            return None
+        if any(s >= SKIN_BARE for s in skins):
+            return "bare"  # one bare hand is a missing glove
+        return "covered" if all(s < SKIN_COVERED for s in skins) else None
+    if not part_boxes(kind, kpts, box):
+        return None
+    cc = crown_cover(frame, kpts)
+    if cc is None:
+        return None
+    bare, shell = cc
+    if shell >= CROWN_COVERED:
+        return "covered"
+    return "bare" if bare >= CROWN_BARE else None
+
+
 class PpeEvidence:
     """Per-track history of PPE runs: "pos" (positive seen), "neg" (part visible, no positive), None (not visible)."""
 
@@ -114,6 +200,12 @@ class PpeEvidence:
             return None
         neg = sum(1 for o in runs if o == "neg")
         return neg / EVIDENCE_WINDOW if neg >= confirm_runs else None
+
+    def worn(self, kind: str, confirm_runs: int) -> float | None:
+        """Share of recent runs that saw the item worn, when that is confirmed; None otherwise."""
+        runs = self.runs.get(kind)
+        pos = sum(1 for o in runs or () if o == "pos")
+        return pos / EVIDENCE_WINDOW if pos >= confirm_runs else None
 
 
 @dataclass
