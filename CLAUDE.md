@@ -6,7 +6,7 @@ Exhibition multi-camera tracking server ("Vision Expo"): one Python process (Fas
 
 The open-vocabulary object detector (YOLOE + CLIP: `world.py`, `clip_verify.py`, `items.py`, `objtrack.py`, `vocabulary.py`, `/world` page) is **temporarily removed**; `751e2bd` is the last commit that has it. Don't reintroduce `objects` / `items` / weapon `alert` fields unless asked to restore it.
 
-`Greco2026DashBoard/` is a separate, git-ignored Vite + TypeScript + three.js project (its own git repo): the 3D exhibition screen. It only consumes `/ws` and `stream.mjpg`; `build_show.bat` builds it into `show/`, which the server mounts at `/show/`. Payload changes must be mirrored in `src/live/types.ts` / `store.ts` there (`npx tsc --noEmit` to check).
+`Greco2026DashBoard/` is a separate, git-ignored Vite + TypeScript + three.js project (its own git repo): the 3D exhibition screen. It only consumes `/ws` and `stream.mjpg`; `build_show.bat` builds it into `show/` (tracked in this repo, with `show/VERSION.txt` naming the Greco commit) so exhibition PCs get the latest screen with `git pull`, no Node; after changing Greco, rebuild and commit `show/`. The server mounts it at `/show/`. Payload changes must be mirrored in `src/live/types.ts` / `store.ts` there (`npx tsc --noEmit` to check).
 
 **Read first:** `docs/GRAPH.md` is a graph-form map of the code (node index, thread model, per-frame pipeline, PPE subgraph, config key → consumer, event → topic/DB, endpoint ↔ page, invariants). `docs/CODE.md` has per-module algorithm detail and change recipes; `docs/WEBSOCKET_API.md` is the external contract.
 
@@ -53,6 +53,6 @@ There are no automated tests. The cameras sit on an isolated LAN, so live frames
 
 ## Repo conventions
 
-- Weights (`models/*.pt`, `*.ts`, `*.json`), `config/settings.json` (contains RTSP passwords), `data/` and the local `show/` dashboard are git-ignored. `yolo_ppe.pt` is copied in by hand; others come from `tools/prepare_models.py`.
+- Weights (`models/*.pt`, `*.ts`, `*.json`), `config/settings.json` (contains RTSP passwords), `data/` and `Greco2026DashBoard/` (source; its build `show/` is tracked) are git-ignored. `yolo_ppe.pt` is copied in by hand; others come from `tools/prepare_models.py`.
 - OpenCV overlay text must be ASCII (`draw.ascii_text`); Vietnamese only in the web UI / data.
 - When adding an event type: emit in the worker, map it in `ws.EVENT_TOPIC` if not `events`, add it to `EVENT_TYPES` in `web/js/data.js`, document in `docs/WEBSOCKET_API.md` and `web/socket.html`. Keep `docs/GRAPH.md` in sync when module relationships change.

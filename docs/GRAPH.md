@@ -197,7 +197,7 @@ PPE hiển thị trên Live (KPI "Thiếu PPE", panel "PPE trong vùng" khi came
 - **Server ghi đè `settings.json`** mỗi lần lưu: sửa tay khi đang chạy sẽ mất. Hai server cùng chạy dùng chung file.
 - **`cwd = models/`** khi chạy (`__main__`); luôn dùng `paths.py` cho đường dẫn.
 - **`track_id` từ ByteTrack của person**; bằng chứng PPE (`_ppe_evidence`) gắn theo mã này và bị xóa khi track kết thúc.
-- **Greco không phải một phần của repo này**: `Greco2026DashBoard/` có git riêng; đổi payload WS thì sửa `src/live/types.ts` + `store.ts`, chạy `build_show.bat` để chép bản build vào `show/`.
+- **Greco không phải một phần của repo này**: `Greco2026DashBoard/` có git riêng; đổi payload WS thì sửa `src/live/types.ts` + `store.ts`, chạy `build_show.bat` để chép bản build vào `show/`, rồi **commit `show/`** (máy triển lãm lấy màn hình 3D qua `git pull`, không có Node). `show/VERSION.txt` (cũng ở `/show/VERSION.txt`) ghi commit Greco của bản build.
 - `settings.json` chứa mật khẩu RTSP, không có trong git, nhưng nằm trong bản đóng gói.
 
 ## 9. Kiểm thử nhanh không cần camera

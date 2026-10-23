@@ -1,0 +1,2 @@
+# Built 3D dashboard (build_show.bat): keep bytes as built, no line-ending conversion or text diffs.
+show/** -text -diff

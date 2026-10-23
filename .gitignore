@@ -1,9 +1,8 @@
 .venv/
 dist/
-show/
+# show/ (the built 3D dashboard) and its scripts are tracked so exhibition PCs get it with git pull, no Node needed.
+# Greco2026DashBoard/ is its own git repo: rebuild with build_show.bat and commit show/ after changing it.
 Greco2026DashBoard/
-build_show.bat
-start_show.bat
 data/
 __pycache__/
 *.pyc

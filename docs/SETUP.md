@@ -20,7 +20,7 @@ Mọi lệnh bên dưới chạy trong thư mục `Exhibition/`.
 | `config/settings.json` | Danh sách camera (có mật khẩu RTSP), line/vùng, mọi thông số | App tự tạo lần chạy đầu, sau đó chỉnh trên web |
 | `data/` | Database SQLite | App tự tạo |
 | `.venv/`, `dist/` | Môi trường Python, bản đóng gói | `setup.bat`, `build_portable.bat` |
-| `Greco2026DashBoard/`, `show/` | Màn hình 3D trình chiếu (project Vite riêng) và bản build của nó | Copy tay thư mục `Greco2026DashBoard/`, rồi `build_show.bat` (cần Node.js) |
+| `Greco2026DashBoard/` | Source màn hình 3D (project Vite, git riêng). Máy triển lãm **không cần**: bản build `show/` đã có trong git, `git pull` là có bản mới nhất | Chỉ máy dev: clone repo Greco, `build_show.bat` (cần Node.js) rồi commit `show/` |
 
 `config/vocabulary.json` (từ khóa của tính năng nhận diện đồ vật, đang gỡ tạm) vẫn có trong git nhưng app không đọc.
 

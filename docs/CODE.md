@@ -8,7 +8,7 @@ Một tiến trình Python duy nhất:
 
 - **Backend**: FastAPI + Uvicorn (`app/`). Đọc nhiều camera song song, phát hiện + theo dõi người (Ultralytics YOLO pose + ByteTrack), đếm vào/ra theo line hoặc polygon, kiểm tra PPE (mũ bảo hộ, găng từng tay) cho người trong vùng, lưu SQLite, đẩy WebSocket.
 - **Frontend**: HTML + JavaScript thuần (`web/`), không build step. Video xem qua MJPEG, số liệu qua polling `/api/status` mỗi giây.
-- **Màn hình 3D** (`Greco2026DashBoard/`, project Vite + TypeScript + three.js riêng, git riêng, bị ignore): đọc `/ws` + `stream.mjpg`, build vào `show/`, server mount ở `/show/`.
+- **Màn hình 3D** (`Greco2026DashBoard/`, project Vite + TypeScript + three.js riêng, git riêng, bị ignore): đọc `/ws` + `stream.mjpg`, `build_show.bat` build vào `show/` (có trong git, kèm `show/VERSION.txt` ghi commit Greco), server mount ở `/show/`. Đổi Greco thì build lại và commit `show/` để máy triển lãm pull về.
 - **Cấu hình**: `config/settings.json` (thông số, camera), sửa qua web.
 
 Nhận diện đồ vật theo từ khóa (YOLOE + CLIP: `world.py`, `clip_verify.py`, `items.py`, `objtrack.py`, `vocabulary.py`, trang `/world`) đã **gỡ tạm**. Code và tài liệu thuật toán của nó còn nguyên ở commit `751e2bd` (`git show 751e2bd:docs/CODE.md`).
