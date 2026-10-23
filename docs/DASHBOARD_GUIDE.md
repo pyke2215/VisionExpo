@@ -114,7 +114,7 @@ Dùng khi muốn biết người đang **ở trong một khu vực** (khu trưng
 3. Chọn task: **Đếm vào/ra** và/hoặc **PPE (mũ + găng)**.
 4. **Lưu**.
 
-Người được xét theo **điểm chân** (giữa hai mắt cá). Đi từ ngoài vào trong vùng = một lượt VÀO (nếu bật đếm), ra ngoài = một lượt RA (kèm thời gian đã ở trong).
+Mục **Tính là TRONG vùng khi** chọn cách xét: *phần lớn thân dưới nằm trong vùng* (mặc định: ≥ N% của 40% dưới khung người nằm trong vùng; hợp với người ngồi, bị khung hình cắt chân, hoặc chỉ thò một phần ra ngoài) *phần lớn cả người nằm trong vùng* (≥ N% khung người; hợp khi vùng phủ gần hết khung hình, không chỉ sàn) hoặc *điểm chân nằm trong vùng* (giữa hai mắt cá; chính xác hơn khi luôn thấy rõ chân). Đi từ ngoài vào trong vùng = một lượt VÀO (nếu bật đếm), ra ngoài = một lượt RA (kèm thời gian đã ở trong).
 
 **PPE:** model `yolo_ppe.pt` nhận `Hardhat` / `NO-Hardhat` / `Gloves` / `NO-Gloves` trên người đang **trong vùng**. Dương và âm đều hiện trên Live; chỉ `NO-*` tô đỏ và gửi sự kiện `ppe_alert`. Có thể bật PPE mà không bật đếm (vẫn tính trong/ngoài để lọc). Người "trong vùng" xét theo điểm chân (hoặc tâm thân), nên mũ trên đầu nằm ngoài polygon vẫn được tính. Model chạy trên ảnh cắt của từng người trong vùng (`ppe.mode = "crop"`); người cao dưới 48 px bị bỏ qua.
 

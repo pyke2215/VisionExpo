@@ -31,6 +31,8 @@ class Person:
 
         The box bottom jumps (shadows, chairs, frame edge) whenever a turn or bend drops the ankle confidence,
         which flips the zone side back and forth; the keypoint fallbacks keep the point on the legs.
+        A seated thigh is near horizontal, so the shin is taken straight down from the knee, not along the thigh
+        (that pushed the point a thigh-length sideways, e.g. under the desk and out of the zone).
         """
         k = self.keypoints
         if k is not None and len(k) > RIGHT_ANKLE:
@@ -40,9 +42,16 @@ class Person:
                     return float(np.mean([p[0] for p in pts])), float(np.mean([p[1] for p in pts]))
             legs = [(k[h], k[n]) for h, n in ((LEFT_HIP, LEFT_KNEE), (RIGHT_HIP, RIGHT_KNEE))
                     if k[h][2] >= KPT_MIN_CONF and k[n][2] >= KPT_MIN_CONF]
-            if legs:  # shin ≈ thigh: ankle ≈ knee + (knee - hip)
-                xs = [2 * n[0] - h[0] for h, n in legs]
-                ys = [2 * n[1] - h[1] for h, n in legs]
+            if legs:  # shin ≈ thigh: ankle ≈ knee + (knee - hip); seated (thigh flatter than 45°): straight down
+                xs, ys = [], []
+                for h, n in legs:
+                    dx, dy = n[0] - h[0], n[1] - h[1]
+                    if abs(dx) > abs(dy):
+                        xs.append(n[0])
+                        ys.append(n[1] + float(np.hypot(dx, dy)))
+                    else:
+                        xs.append(n[0] + dx)
+                        ys.append(n[1] + dy)
                 y2 = self.box[3]
                 return float(np.mean(xs)), float(min(np.mean(ys), y2))
         x1, _, x2, y2 = self.box

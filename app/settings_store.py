@@ -32,6 +32,8 @@ CAMERA_DEFAULTS: dict[str, Any] = {
         "inward_point": None,
         "zone": [],
         "tasks": ["count"],  # zone: "count" = vào/ra, "ppe" = Hardhat/Gloves trong vùng
+        "zone_rule": "body",  # zone: "body" = phần lớn thân dưới trong vùng, "box" = phần lớn cả người, "foot" = điểm chân
+        "zone_overlap": 0.5,  # body / box rule: share of the judged box part that must lie inside
     },
 }
 
@@ -112,6 +114,8 @@ def normalize_camera(cam: dict) -> dict:
     tasks = normalize_crossing_tasks(cr)
     cr["tasks"] = tasks
     cr["enabled"] = "count" in tasks  # backward-compatible flag for counting
+    cr["zone_rule"] = cr.get("zone_rule") if cr.get("zone_rule") in ("foot", "box") else "body"
+    cr["zone_overlap"] = float(min(max(float(cr.get("zone_overlap", 0.5)), 0.1), 0.9))
     return merged
 
 

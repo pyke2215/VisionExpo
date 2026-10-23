@@ -167,7 +167,7 @@ Luồng: `worker._emit` → `EventHub.publish` (đồng bộ, trên thread worke
 |---|---|---|
 | `/` Live | `live.js` | `/api/status` (1s), `stream.mjpg` / `frame.jpg`, `/api/crossing/reset_all` |
 | `/cameras` | `cameras.js` | `/api/cameras` CRUD, `/api/cameras/test`, `/restart`, `/api/status` |
-| `/calibrate` | `calibrate.js` | `/api/cameras/{id}`, `snapshot.jpg`, `PUT /crossing` (mode, points, zone, tasks), `/crossing/reset` |
+| `/calibrate` | `calibrate.js` | `/api/cameras/{id}`, `snapshot.jpg`, `PUT /crossing` (mode, points, zone, tasks, zone_rule, zone_overlap), `/crossing/reset` |
 | `/ppe` | `ppe.js` | `GET/PUT /api/ppe` (tự lưu, debounce), `/api/cameras`, `PUT /api/cameras/{id}/crossing` (bật/tắt task `ppe`) |
 | `/data` | `data.js` | `/api/db*`, export CSV, `/api/db/clear` |
 | `/socket` | `socket.js` | `/api/ws`, `WebSocket /ws` |
@@ -192,7 +192,7 @@ PPE hiển thị trên Live (KPI "Thiếu PPE", panel "PPE trong vùng" khi came
 - **Gán list mới** cho `worker.persons/ppe_findings` mỗi khung; thread khác chỉ đọc. Đừng sửa list tại chỗ.
 - **Subscriber EventHub không được chặn** (chạy trên thread worker).
 - **Tọa độ cấu hình chuẩn hóa 0–1**; worker đổi sang pixel mỗi khung (`zone_px`, `line_px`).
-- **Vùng/đếm theo điểm chân**, không theo box. Polygon thường vẽ trên sàn → đầu người nằm ngoài polygon; mọi thứ gắn theo người phải xét "người có trong vùng", không xét vị trí box vật.
+- **Vùng/đếm theo thân dưới hoặc điểm chân** (`crossing.zone_rule`: `body` mặc định = tỷ lệ 40% dưới của box nằm trong polygon; `box` = cả box; `foot`; line luôn theo điểm chân), không theo vị trí box vật. Polygon thường vẽ trên sàn → đầu người nằm ngoài polygon; mọi thứ gắn theo người phải xét "người có trong vùng", không xét vị trí box vật.
 - **Model chạy cả khung bị letterbox về `imgsz`**: 1920×1080 → 640 thu nhỏ 3 lần; vật nhỏ (mũ, găng) ở xa mất. PPE dùng crop vì vậy.
 - **Server ghi đè `settings.json`** mỗi lần lưu: sửa tay khi đang chạy sẽ mất. Hai server cùng chạy dùng chung file.
 - **`cwd = models/`** khi chạy (`__main__`); luôn dùng `paths.py` cho đường dẫn.

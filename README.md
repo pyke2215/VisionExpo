@@ -101,7 +101,7 @@ Mỗi camera chạy một luồng riêng: đọc RTSP liên tục và chỉ gi�
 
 1. YOLO pose + ByteTrack cho ra người kèm mã theo dõi (`#id`) và khung xương.
 2. Điểm chân (trung điểm hai mắt cá, nếu không thấy thì lấy đáy khung) được so với đoạn A–B. Khi một người đổi phía và điểm cắt nằm trong đoạn A–B thì tính một lượt vào hoặc ra. Có vùng đệm quanh line và thời gian chờ 1 giây để tránh đếm lặp khi đứng trên line.
-   Chế độ vùng: điểm chân đi từ ngoài vào trong polygon là VÀO, từ trong ra ngoài là RA (cùng vùng đệm quanh viền và thời gian chờ). Trang Live hiện số người đang thấy, đang trong vùng và ngoài vùng tại thời điểm hiện tại (chế độ line: phía có điểm I là "trong"); người vừa xuất hiện trên vùng đệm chưa được tính vào phía nào. Người xuất hiện sẵn trong vùng (lúc khởi động, hoặc tracker đổi mã người) được tính là đang ở trong nhưng không tính thêm lượt vào. Nên vẽ vùng chừa khoảng trống với mép khung hình ở phía người đi tới.
+   Chế độ vùng: người (theo `zone_rule`: phần lớn thân dưới hoặc điểm chân) đi từ ngoài vào trong polygon là VÀO, từ trong ra ngoài là RA (cùng vùng đệm quanh viền và thời gian chờ). Trang Live hiện số người đang thấy, đang trong vùng và ngoài vùng tại thời điểm hiện tại (chế độ line: phía có điểm I là "trong"); người vừa xuất hiện trên vùng đệm chưa được tính vào phía nào. Người xuất hiện sẵn trong vùng (lúc khởi động, hoặc tracker đổi mã người) được tính là đang ở trong nhưng không tính thêm lượt vào. Nên vẽ vùng chừa khoảng trống với mép khung hình ở phía người đi tới.
 3. Nếu camera có vùng bật task `ppe`: kiểm tra mũ / găng cho người trong vùng (chi tiết ở dòng `ppe.*` bảng cấu hình).
 4. Vẽ overlay, nén JPEG, phát qua MJPEG cho trình duyệt. Người thiếu PPE được tô đỏ và gắn nhãn PPE, trang Live có ô "Thiếu PPE" nhấp nháy.
 
@@ -120,7 +120,7 @@ Mỗi camera chạy một luồng riêng: đọc RTSP liên tục và chỉ gi�
 | `cameras[].source` | RTSP URL, số webcam (`0`), hoặc đường dẫn file video (tự lặp) |
 | `cameras[].conf`, `imgsz`, `process_fps` | Ngưỡng phát hiện người, kích thước suy luận, FPS xử lý tối đa |
 | `cameras[].stream_width`, `jpeg_quality` | Độ phân giải / chất lượng luồng xem |
-| `cameras[].crossing` | `mode` (`line` / `zone`); `tasks` (`count`, `ppe` — PPE chỉ vùng); line: `points` + `inward_point`; vùng: `zone` (3–32 điểm). Đổi chế độ không mất hình của chế độ kia |
+| `cameras[].crossing` | `mode` (`line` / `zone`); `tasks` (`count`, `ppe` — PPE chỉ vùng); line: `points` + `inward_point`; vùng: `zone` (3–32 điểm), `zone_rule` (`body` = ≥ `zone_overlap` (mặc định 0.5) của 40% dưới khung người nằm trong vùng, mặc định; `box` = như trên nhưng cả khung người; `foot` = điểm chân trong vùng). Đổi chế độ không mất hình của chế độ kia |
 | `websocket.enabled`, `status_hz`, `people_hz`, `default_topics`, `token` | WebSocket `/ws` |
 | `database.enabled`, `sample_every_s`, `retention_days`, `save_tracks`, `restore_counts` | Database |
 

@@ -164,7 +164,7 @@ def create_app(device: str | None = None) -> FastAPI:
     # ---------- crossing ----------
     @app.put("/api/cameras/{cam_id}/crossing")
     def api_set_crossing(cam_id: str, payload: dict = Body(...)):
-        _camera_or_404(cam_id)
+        cam = _camera_or_404(cam_id)
         mode = payload.get("mode", "line")
         if mode not in ("line", "zone"):
             raise HTTPException(400, "mode must be 'line' or 'zone'")
@@ -195,6 +195,11 @@ def create_app(device: str | None = None) -> FastAPI:
         else:
             # Backward compat: enabled checkbox alone → count task
             tasks = ["count"] if bool(payload.get("enabled", True)) else []
+        cur = cam.get("crossing") or {}  # keep the rule when the caller omits it
+        rule = payload.get("zone_rule", cur.get("zone_rule", "body"))
+        if rule not in ("body", "box", "foot"):
+            raise HTTPException(400, "zone_rule must be 'body', 'box' or 'foot'")
+        overlap = float(min(max(float(payload.get("zone_overlap", cur.get("zone_overlap", 0.5))), 0.1), 0.9))
         crossing = {
             "enabled": "count" in tasks,
             "mode": mode,
@@ -202,6 +207,8 @@ def create_app(device: str | None = None) -> FastAPI:
             "inward_point": norm(inward) if inward else None,
             "zone": [norm(p) for p in zone],
             "tasks": tasks,
+            "zone_rule": rule,
+            "zone_overlap": overlap,
         }
         return manager.update_camera(cam_id, {"crossing": crossing})["crossing"]
 

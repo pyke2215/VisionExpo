@@ -114,13 +114,16 @@ Phân loại nguồn (`webcam` / `stream` / `file`), mở bằng OpenCV (RTSP qu
 
 ### `crossing.py` – `CrossingCounter`
 
-- Xét theo **điểm chân** (`Person.foot_point()`: trung điểm hai mắt cá nếu đủ tin cậy; dự phòng bên dưới).
+- line xét theo **điểm chân** (`Person.foot_point()`: trung điểm hai mắt cá nếu đủ tin cậy; dự phòng bên dưới). zone theo `crossing.zone_rule`:
+  - `body` (mặc định): tỷ lệ diện tích **40% dưới của box** (`BODY_FRAC`) nằm trong polygon ≥ `zone_overlap` (mặc định 0.5). Tính O(1) bằng ảnh tích phân của mask vùng (`_zone_integral`, dựng lại khi đổi kích thước / vùng). Đã có phía thì có dải trễ ±`OVERLAP_HYST` (0.05) quanh ngưỡng; lần đọc đầu quyết định thẳng theo ngưỡng. Dùng cho người ngồi, người bị mép khung cắt chân, người chỉ thò một phần ra ngoài.
+  - `box`: như `body` nhưng trên cả box (vùng phủ gần hết khung hình; vùng chỉ vẽ trên sàn thì thân trên người đứng nằm ngoài polygon → dễ bị tính ngoài, người đứng ngay trước vùng lại bị tính trong).
+  - `foot`: điểm chân trong polygon (cách cũ).
 - **Vùng đệm** `DEAD_ZONE_FRAC` (0.6% đường chéo khung): điểm nằm trong dải này không đổi phía, tránh nhảy qua lại trên biên.
 - **line**: dấu của tích chéo với đoạn A–B; phía "trong" là phía chứa `inward_point`. Đổi phía và điểm cắt nằm trong đoạn (cho phép lố 10%) → một lượt.
 - **zone**: `cv2.pointPolygonTest` có dấu khoảng cách. Ngoài → trong = `in`, trong → ngoài = `out` kèm `dwell_s`. Track xuất hiện sẵn bên trong: tính là đang ở trong, không phát sinh lượt vào.
 - `COOLDOWN_S = 1`: một track không được đếm hai lần trong 1 giây.
 - `SIDE_CONFIRM_FRAMES = 3`: phía mới phải giữ 3 khung liên tiếp mới được nhận (khung xương rung khi xoay người làm điểm chân nhảy qua biên).
-- Điểm chân dự phòng: mắt cá tin cậy ≥ 0.35 → mắt cá yếu ≥ 0.15 → đầu gối + (đầu gối − hông) → đáy box.
+- Điểm chân dự phòng: mắt cá tin cậy ≥ 0.35 → mắt cá yếu ≥ 0.15 → đầu gối + (đầu gối − hông) (đùi nằm ngang hơn 45° = đang ngồi: thẳng xuống từ đầu gối một đoạn bằng đùi) → đáy box.
 - `inside` / `outside`: đếm `p.side` của khung hiện tại. `entries` / `exits`: cộng dồn, khôi phục từ DB khi khởi động (`restore_counts`).
 - Đổi cấu hình hình học (mode/points/zone) thì xóa trạng thái các track.
 
@@ -152,7 +155,7 @@ Màu theo phía (`SIDE_COLORS`: xanh trong, cam ngoài, xám chưa rõ), đỏ k
 | POST | `/api/cameras/test` | Thử nguồn, trả ảnh base64 |
 | GET/PUT/DELETE | `/api/cameras/{id}` | Xem / sửa / xóa |
 | POST | `/api/cameras/{id}/restart` | Khởi động lại worker |
-| PUT | `/api/cameras/{id}/crossing` | `{mode, points, inward_point, zone, tasks}` (tọa độ 0–1; `tasks` ⊂ `count`, `ppe`; `ppe` chỉ với zone) |
+| PUT | `/api/cameras/{id}/crossing` | `{mode, points, inward_point, zone, tasks, zone_rule?, zone_overlap?}` (tọa độ 0–1; `tasks` ⊂ `count`, `ppe`; `ppe` chỉ với zone; `zone_rule` `body`/`foot`, `zone_overlap` 0.1–0.9, bỏ trống = giữ giá trị cũ) |
 | POST | `/api/cameras/{id}/crossing/reset`, `/api/crossing/reset_all` | Reset lượt vào/ra |
 | GET | `/api/cameras/{id}/stream.mjpg`, `frame.jpg`, `snapshot.jpg` | Video MJPEG / ảnh có overlay / ảnh gốc |
 | GET/PUT | `/api/ppe` | Trạng thái + cấu hình PPE (`enabled`, `mode`, `conf`, `imgsz`, `every_n`, `infer_missing`, `require`, `confirm_runs`, `person_mask`, `mask_imgsz`; PUT kiểm tra và giới hạn từng khóa) |

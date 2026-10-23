@@ -7,8 +7,12 @@ Config is normalized (0..1) so it survives resolution changes:
      "tasks": ["count", "ppe"]}                                                          # features for this geometry
 
 line: a track whose foot point changes side of the segment A-B counts IN (towards inward_point) or OUT.
-zone: a track whose foot point goes from outside to inside the polygon counts IN, inside to outside OUT;
+zone: a track that goes from outside to inside the polygon counts IN, inside to outside OUT;
       OUT events carry the time spent inside.
+      "zone_rule": "body" (default) = inside when >= zone_overlap of the lower part of the box lies in the polygon;
+      "box" = the same share over the whole box (zone drawn over the whole scene, not just the floor);
+      "foot" = inside when the foot point does. The foot point of a seated person or one cut off by the frame edge
+      is a guess, so one leg or a desk-side lean puts them "out" although most of the body is in.
 A track first seen already inside the zone is inside but not an entry (no double counts on ID switches).
 `inside` / `outside` are the people currently visible on each side (line: the inward side counts as inside).
 
@@ -33,6 +37,8 @@ COOLDOWN_S = 1.0  # ignore repeated flips of the same track within this window
 SIDE_CONFIRM_FRAMES = 3  # a new side must hold this many frames in a row (keypoint jitter on a turn)
 STALE_TRACK_S = 30.0
 MAX_ZONE_POINTS = 32
+BODY_FRAC = 0.4  # body rule: bottom share of the box that is judged (legs / lap; the head sits above a floor zone)
+OVERLAP_HYST = 0.05  # body rule: in above overlap + this, out below overlap - this, undecided between
 ALLOWED_TASKS = frozenset({"count", "ppe"})
 
 
@@ -74,6 +80,7 @@ class CrossingCounter:
         self._last_seen: dict[int, float] = {}
         self._last_event: dict[int, float] = {}
         self._entered_at: dict[int, float] = {}
+        self._zone_sum: tuple[tuple, np.ndarray] | None = None  # (key, integral image of the zone mask)
         self.set_config(cfg)
 
     @property
@@ -109,7 +116,8 @@ class CrossingCounter:
 
     def set_config(self, cfg: dict | None) -> None:
         with self._lock:
-            key = lambda c: (mode_of(c), c.get("points"), c.get("inward_point"), c.get("zone"), tuple(tasks_of(c)))  # noqa: E731
+            key = lambda c: (mode_of(c), c.get("points"), c.get("inward_point"), c.get("zone"), tuple(tasks_of(c)),  # noqa: E731
+                             c.get("zone_rule"), c.get("zone_overlap"))
             changed = key(self.cfg) != key(cfg or {})
             self.cfg = dict(cfg or {})
             if changed:
@@ -140,6 +148,41 @@ class CrossingCounter:
         if not zone_is_valid(self.cfg):
             return None
         return [(float(p["x"]) * w, float(p["y"]) * h) for p in self.cfg["zone"][:MAX_ZONE_POINTS]]
+
+    @property
+    def zone_rule(self) -> str:
+        rule = self.cfg.get("zone_rule")
+        return rule if rule in ("foot", "box") else "body"
+
+    def _zone_integral(self, w: int, h: int) -> np.ndarray:
+        """Summed-area table of the filled polygon, so any box's overlap is 4 lookups (rebuilt on size / zone change)."""
+        key = (w, h, tuple((p["x"], p["y"]) for p in self.cfg["zone"][:MAX_ZONE_POINTS]))
+        if self._zone_sum is None or self._zone_sum[0] != key:
+            mask = np.zeros((h, w), np.uint8)
+            cv2.fillPoly(mask, [np.array(self.zone_px(w, h), np.float32).round().astype(np.int32)], 1)
+            self._zone_sum = (key, cv2.integral(mask))
+        return self._zone_sum[1]
+
+    def _body_side(self, p: Person, w: int, h: int, prev: int | None) -> int:
+        """1 / -1 / 0 from the share of the lower box inside the zone.
+
+        Once a track has a side, a hysteresis band around zone_overlap returns 0 (keep it); a first reading
+        decides on the threshold alone, so someone standing in the band still gets a side.
+        """
+        x1, y1, x2, y2 = p.box
+        x1, x2 = int(max(0, min(w, x1))), int(max(0, min(w, x2)))
+        y2i = int(max(0, min(h, y2)))
+        frac = 1.0 if self.zone_rule == "box" else BODY_FRAC
+        y1i = int(max(0, min(h, y2 - frac * (y2 - y1))))
+        area = (x2 - x1) * (y2i - y1i)
+        if area <= 0:
+            return 0
+        s = self._zone_integral(w, h)
+        share = float(s[y2i, x2] - s[y1i, x2] - s[y2i, x1] + s[y1i, x1]) / area
+        thr = float(self.cfg.get("zone_overlap", 0.5))
+        if prev is None:
+            return 1 if share >= thr else -1
+        return 1 if share >= thr + OVERLAP_HYST else -1 if share <= thr - OVERLAP_HYST else 0
 
     def _in_sign(self, a, b, w: int, h: int) -> int:
         inward = self.cfg.get("inward_point")
@@ -213,10 +256,14 @@ class CrossingCounter:
         events: list[dict] = []
         poly = np.array(self.zone_px(w, h), dtype=np.float32).reshape(-1, 1, 2)
         do_count = self.has_task("count")
+        body = self.zone_rule != "foot"
         for p in persons:
-            fx, fy = p.foot_point()
-            dist = cv2.pointPolygonTest(poly, (float(fx), float(fy)), True)  # > 0 inside
-            side = 1 if dist > dead else -1 if dist < -dead else 0
+            if body:
+                side = self._body_side(p, w, h, self._last_side.get(p.track_id) if p.track_id is not None else None)
+            else:
+                fx, fy = p.foot_point()
+                dist = cv2.pointPolygonTest(poly, (float(fx), float(fy)), True)  # > 0 inside
+                side = 1 if dist > dead else -1 if dist < -dead else 0
             tid = p.track_id
             if tid is None:
                 p.side = "unknown" if side == 0 else ("in" if side == 1 else "out")

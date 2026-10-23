@@ -180,6 +180,9 @@ function updatePanel() {
   $("countLabel").textContent = zone ? "Đếm vào/ra vùng" : "Đếm qua line";
   $("ppeWrap").classList.toggle("hidden", !zone);
   $("ppeHint").classList.toggle("hidden", !zone);
+  $("ruleWrap").classList.toggle("hidden", !zone);
+  $("overlapWrap").classList.toggle("hidden", $("selRule").value === "foot");
+  $("overlapWhat").textContent = $("selRule").value === "box" ? "% khung người" : "% thân dưới (40% dưới của khung người)";
   if (!zone) $("chkPpe").checked = false;
   const f = (p) => `(${p.x.toFixed(3)}, ${p.y.toFixed(3)})`;
   $("coords").textContent = zone
@@ -296,6 +299,8 @@ async function selectCamera(id, push = true) {
   const tasks = Array.isArray(c.tasks) ? c.tasks : (c.enabled !== false ? ["count"] : []);
   $("chkCount").checked = tasks.includes("count");
   $("chkPpe").checked = tasks.includes("ppe");
+  $("selRule").value = ["foot", "box"].includes(c.zone_rule) ? c.zone_rule : "body";
+  $("numOverlap").value = Math.round((c.zone_overlap ?? 0.5) * 100);
   st.dirty = false;
   st.img = null;
   draw();
@@ -321,6 +326,8 @@ async function save() {
         inward_point: st.pts.length === 2 ? st.inward : null,
         zone: st.zone.length >= 3 ? st.zone : [],
         tasks,
+        zone_rule: $("selRule").value,
+        zone_overlap: Math.min(90, Math.max(10, Number($("numOverlap").value) || 50)) / 100,
       },
     });
     st.dirty = false;
@@ -368,6 +375,8 @@ $("btnClear").onclick = () => {
 $("btnSave").onclick = save;
 $("chkCount").onchange = () => { st.dirty = true; updatePanel(); };
 $("chkPpe").onchange = () => { st.dirty = true; updatePanel(); };
+$("selRule").onchange = () => { st.dirty = true; updatePanel(); };
+$("numOverlap").oninput = () => { st.dirty = true; updatePanel(); };
 $("btnResetCount").onclick = async () => {
   try {
     await api(`/api/cameras/${encodeURIComponent(st.camId)}/crossing/reset`, { method: "POST" });

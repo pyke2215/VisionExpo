@@ -35,6 +35,17 @@
           <label class="check"><input type="checkbox" id="chkCount" checked /> <span id="countLabel">Đếm vào/ra</span></label>
           <label class="check" id="ppeWrap"><input type="checkbox" id="chkPpe" /> PPE (mũ bảo hiểm + găng tay) trong vùng</label>
           <p class="muted small" id="ppeHint" style="margin:0">PPE chỉ dùng với vùng polygon: báo Hardhat / Gloves và cảnh báo NO-Hardhat / NO-Gloves cho người đang ở trong vùng.</p>
+          <div class="col" id="ruleWrap" style="gap:6px">
+            <label class="small">Tính là TRONG vùng khi
+              <select id="selRule">
+                <option value="body">phần lớn thân dưới nằm trong vùng</option>
+                <option value="box">phần lớn cả người nằm trong vùng</option>
+                <option value="foot">điểm chân nằm trong vùng</option>
+              </select>
+            </label>
+            <label class="small" id="overlapWrap">Tối thiểu <input type="number" id="numOverlap" min="10" max="90" step="5" value="50" style="width:64px" /> <span id="overlapWhat">% thân dưới (40% dưới của khung người)</span></label>
+            <p class="muted small" style="margin:0">"Thân dưới" hợp với người ngồi, người bị khung hình cắt chân hoặc chỉ thò một phần ra ngoài vùng. "Cả người" hợp khi vùng phủ gần hết khung hình (cả tường, không chỉ sàn); với vùng chỉ vẽ trên sàn, người đứng trong vùng có thân trên nằm ngoài polygon nên dễ bị tính ngoài. "Điểm chân" chính xác hơn khi vùng vẽ sát lối đi và luôn thấy rõ chân.</p>
+          </div>
           <div class="row">
             <button id="btnFlip">Đảo chiều VÀO/RA</button>
             <button id="btnClear">Vẽ lại</button>
