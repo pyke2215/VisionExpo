@@ -7,17 +7,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 APP_DIR = ROOT / "app"
 WEB_DIR = ROOT / "web"
+# 3D show dashboard served at /show/: build_show.bat output first, then the Vite dist folder.
+SHOW_DIRS = (ROOT / "show", ROOT / "Greco2026DashBoard" / "dist")
 CONFIG_DIR = ROOT / "config"
 MODELS_DIR = ROOT / "models"
 DATA_DIR = ROOT / "data"
 DATABASE_FILE = DATA_DIR / "exhibition.sqlite3"
 
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
-VOCABULARY_FILE = CONFIG_DIR / "vocabulary.json"
 
 PERSON_MODEL_DEFAULT = "yolo26n-pose.pt"
-WORLD_BASE_MODEL = "yoloe-26l-seg.pt"  # open-vocabulary detector; a "-world" model (yolov8s-worldv2.pt) also works
-WORLD_BAKED_MODEL = "yoloe_exhibition.pt"
 PPE_MODEL_DEFAULT = "yolo_ppe.pt"  # Hardhat / Gloves (+ NO-* negatives)
 MASK_MODEL_DEFAULT = "yolo26n-seg.pt"  # person masks for the glove check (pixels of the person only)
 

@@ -17,9 +17,8 @@ from .capture import grab_single_frame
 from .crossing import ALLOWED_TASKS, MAX_ZONE_POINTS
 from .settings_store import ZONE_TASKS
 from .manager import CameraManager
-from .paths import WEB_DIR
+from .paths import SHOW_DIRS, WEB_DIR
 from .settings_store import SettingsStore
-from .vocabulary import CATEGORY_LABELS, flatten_classes
 from .ws import TOPICS, WsHub
 
 BOUNDARY = "frame"
@@ -47,13 +46,17 @@ def create_app(device: str | None = None) -> FastAPI:
     app = FastAPI(title="Exhibition Camera Tracking", version=__version__, lifespan=lifespan)
     app.state.manager = manager
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+    # Local 3D show dashboard (Greco2026DashBoard build, git-ignored): http://HOST:PORT/show/
+    show_dir = next((d for d in SHOW_DIRS if (d / "index.html").is_file()), None)
+    if show_dir is not None:
+        app.mount("/show", StaticFiles(directory=show_dir, html=True), name="show")
 
     @app.middleware("http")
     async def revalidate_static(request: Request, call_next):
         # Without it browsers heuristically cache js/css and keep running old code after an update
         # (new HTML, old live.js). no-cache = revalidate each load; unchanged files answer 304.
         response = await call_next(request)
-        if request.url.path.startswith("/static/"):
+        if request.url.path.startswith(("/static/", "/show")):
             response.headers["Cache-Control"] = "no-cache"
         return response
 
@@ -86,9 +89,9 @@ def create_app(device: str | None = None) -> FastAPI:
     def page_calibrate(cam_id: str | None = None):
         return _page("calibrate.html")
 
-    @app.get("/world", include_in_schema=False)
-    def page_world():
-        return _page("world.html")
+    @app.get("/ppe", include_in_schema=False)
+    def page_ppe():
+        return _page("ppe.html")
 
     @app.get("/socket", include_in_schema=False)
     def page_socket():
@@ -373,66 +376,6 @@ def create_app(device: str | None = None) -> FastAPI:
             headers={"Cache-Control": "no-store"},
         )
 
-    # ---------- object detector ----------
-    @app.get("/api/world")
-    def api_world():
-        w = manager.world
-        return {
-            **w.info(),
-            "vocabulary": w.vocab_doc,
-            "category_labels": CATEGORY_LABELS,
-        }
-
-    @app.put("/api/world")
-    def api_update_world(payload: dict = Body(...)):
-        allowed = {
-            "enabled", "conf", "imgsz", "every_n", "disabled_classes", "attach_to_person",
-            "scope", "person_margin", "min_person_px",
-            "alert_conf", "confirm_hits", "alert_hits", "drop_misses", "reject_static",
-            "category_conf", "min_obj_px", "show_conf", "label_margin",
-            "clip_verify", "clip_min",
-        }
-        patch = {k: v for k, v in payload.items() if k in allowed}
-        if "scope" in patch and patch["scope"] not in ("person", "frame"):
-            raise HTTPException(400, "scope must be 'person' or 'frame'")
-        if "person_margin" in patch:
-            patch["person_margin"] = float(min(max(float(patch["person_margin"]), 0.0), 0.5))
-        if "min_person_px" in patch:
-            patch["min_person_px"] = int(min(max(int(patch["min_person_px"]), 16), 400))
-        for key in ("conf", "alert_conf"):
-            if key in patch:
-                patch[key] = float(min(max(float(patch[key]), 0.01), 0.95))
-        if "show_conf" in patch:
-            patch["show_conf"] = float(min(max(float(patch["show_conf"]), 0.0), 0.95))
-        if "label_margin" in patch:
-            patch["label_margin"] = round(float(min(max(float(patch["label_margin"]), 1.0), 5.0)), 2)
-        for key in ("confirm_hits", "alert_hits"):
-            if key in patch:
-                patch[key] = int(min(max(int(patch[key]), 1), 5))
-        if "drop_misses" in patch:
-            patch["drop_misses"] = int(min(max(int(patch["drop_misses"]), 1), 5))
-        if "reject_static" in patch:
-            patch["reject_static"] = bool(patch["reject_static"])
-        if "clip_verify" in patch:
-            patch["clip_verify"] = bool(patch["clip_verify"])
-        if "clip_min" in patch:
-            patch["clip_min"] = float(min(max(float(patch["clip_min"]), 0.05), 0.5))
-        if "min_obj_px" in patch:
-            patch["min_obj_px"] = int(min(max(int(patch["min_obj_px"]), 0), 100))
-        if "category_conf" in patch:
-            if not isinstance(patch["category_conf"], dict):
-                raise HTTPException(400, "category_conf must be an object {category_id: conf | null}")
-            patch["category_conf"] = {
-                str(k): None if v in (None, "") else float(min(max(float(v), 0.01), 0.95))
-                for k, v in patch["category_conf"].items()
-            }
-        if "every_n" in patch:
-            patch["every_n"] = int(min(max(int(patch["every_n"]), 1), 30))
-        if "imgsz" in patch:
-            patch["imgsz"] = int(min(max(int(patch["imgsz"]), 320), 1280)) // 32 * 32
-        cfg = manager.update_world(patch)
-        return {**manager.world.info(), "config": cfg}
-
     # ---------- PPE detector ----------
     @app.get("/api/ppe")
     def api_ppe():
@@ -463,16 +406,5 @@ def create_app(device: str | None = None) -> FastAPI:
             patch["every_n"] = int(min(max(int(patch["every_n"]), 1), 30))
         manager.update_ppe(patch)
         return manager.ppe.info()
-
-    @app.put("/api/world/vocabulary")
-    def api_update_vocabulary(payload: dict = Body(...)):
-        cats = payload.get("categories")
-        if not isinstance(cats, list):
-            raise HTTPException(400, "categories must be a list")
-        doc = {"categories": cats}
-        if not flatten_classes(doc):
-            raise HTTPException(400, "vocabulary is empty")
-        manager.world.rebuild_async(doc)
-        return manager.world.info()
 
     return app

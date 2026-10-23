@@ -4,14 +4,18 @@ Dashboard mở tại `http://127.0.0.1:8000/` (máy khác trong LAN: `http://<IP
 
 | Menu | Đường dẫn | Dùng để |
 |---|---|---|
-| Live | `/` | Xem camera trực tiếp, số người, đồ vật, cảnh báo |
+| Live | `/` | Xem camera trực tiếp, số người, trạng thái PPE |
 | Cameras | `/cameras` | Thêm / sửa / tắt / xóa camera |
 | Line / Task | `/calibrate` | Vẽ line hoặc vùng; chọn task đếm vào/ra và/hoặc PPE trong vùng |
-| Đồ vật | `/world` | Bật nhận diện đồ vật, chỉnh ngưỡng, chọn từ khóa |
+| PPE | `/ppe` | Bật kiểm tra mũ bảo hộ / găng tay, chọn loại cần kiểm tra, ngưỡng, bật task PPE cho camera |
 | Dữ liệu | `/data` | Lịch sử, biểu đồ, xuất CSV, cấu hình lưu trữ |
 | Socket | `/socket` | Cấu hình WebSocket gửi dữ liệu cho app khác, theo dõi client |
 
-**Lưu thay đổi:** trang Đồ vật **tự lưu** ngay khi chỉnh (hiện thông báo "Đã lưu"). Các trang khác có nút **Lưu**. Mọi thay đổi áp dụng ngay, không cần khởi động lại app.
+Màn hình trình chiếu 3D (Greco2026) mở riêng ở `/show/`, không nằm trên thanh menu (xem cuối trang).
+
+Nhận diện đồ vật (trang Đồ vật cũ) đang gỡ tạm.
+
+**Lưu thay đổi:** trang PPE **tự lưu** ngay khi chỉnh (hiện thông báo "Đã lưu"). Các trang khác có nút **Lưu**. Mọi thay đổi áp dụng ngay, không cần khởi động lại app.
 
 ---
 
@@ -19,8 +23,8 @@ Dashboard mở tại `http://127.0.0.1:8000/` (máy khác trong LAN: `http://<IP
 
 1. **Cameras** → thêm từng camera, bấm **Kiểm tra** thấy ảnh rồi **Thêm**.
 2. **Line / Task** → chọn camera, vẽ vùng (hoặc line), chọn task đếm/PPE nếu cần, **Lưu**.
-3. **Đồ vật** → bấm **Đang TẮT – bấm để bật**.
-4. **Live** → kiểm tra số người, khung, đồ vật.
+3. **PPE** → kiểm tra trạng thái "Sẵn sàng", tick camera cần kiểm tra PPE.
+4. **Live** → kiểm tra số người, khung, nhãn PPE.
 5. (Nếu có app hiển thị) **Socket** → đặt token, gửi URL cho bên làm app.
 
 ---
@@ -34,19 +38,18 @@ Dashboard mở tại `http://127.0.0.1:8000/` (máy khác trong LAN: `http://<IP
 | Đang thấy | Số người đang có trong khung hình lúc này |
 | Trong vùng | Số người đang đứng trong vùng (chế độ line: ở phía "trong") |
 | Ngoài vùng | Số người đang ở ngoài vùng |
-| Đồ vật | Số đồ vật đang hiển thị |
-| Cảnh báo vũ khí | Số người đang mang vật thuộc nhóm vũ khí, ô nhấp nháy đỏ khi > 0 |
+| Thiếu PPE | Số người trong vùng PPE đang thiếu mũ hoặc găng, ô nhấp nháy đỏ khi > 0 |
 
 Người vừa xuất hiện ngay trên mép vùng chưa được tính vào trong hay ngoài, nên "Trong" + "Ngoài" có thể nhỏ hơn "Đang thấy" một chút.
 
-**Danh sách camera bên trái:** trạng thái (chấm xanh = chạy), FPS, số người, trong/ngoài, số cảnh báo. Click để xem camera đó.
+**Danh sách camera bên trái:** trạng thái (chấm xanh = chạy), FPS, số người, trong/ngoài, số người thiếu PPE. Click để xem camera đó.
 
-**Khung hình:** khung người màu theo phía (xanh = trong, cam = ngoài, xám = chưa xác định), `#id` là mã theo dõi, đồ vật hiện kèm nhãn và độ tin cậy. Người mang vũ khí tô đỏ, nhãn ALERT. Góc trên trái: tên camera, FPS, số người, `INSIDE / OUTSIDE`.
+**Khung hình:** khung người màu theo phía (xanh = trong, cam = ngoài, xám = chưa xác định), `#id` là mã theo dõi. Trong vùng PPE: khung xanh `Hardhat` / `Gloves`, khung đỏ `NO-Hardhat` / `NO-Gloves` (kèm độ tin cậy); người thiếu PPE tô đỏ, nhãn PPE. Góc trên trái: tên camera, FPS, số người, `INSIDE / OUTSIDE`.
 
 **Cột bên phải:**
-- *Người trong khung*: mã, tag TRONG / NGOÀI / ?, đồ vật mang theo (tiếng Việt).
+- *Người trong khung*: mã, tag TRONG / NGOÀI / ?, Có mũ / Thiếu mũ / Có găng / Thiếu găng.
+- *PPE trong vùng*: đếm theo nhãn (găng tính từng tay).
 - *Sự kiện vào / ra*: 12 lượt gần nhất.
-- *Đồ vật phát hiện*: đếm theo loại.
 
 **Nút và phím tắt:**
 
@@ -92,7 +95,6 @@ Mỗi camera có nút **Đang bật / Đang tắt**, **Sửa**, **Line** (mở t
 | Bật camera | Tắt = ngừng đọc camera | |
 | Phát hiện người | Tắt = chỉ xem hình | |
 | Vẽ khung / Vẽ khung xương | Hiển thị trên video | |
-| Nhận diện đồ vật | Nhận diện đồ vật trên camera này | |
 | Đếm vào/ra | Dùng line/vùng của camera này | |
 
 Đổi **Nguồn** hoặc **Bật camera** sẽ khởi động lại camera; các thông số khác áp dụng ngay.
@@ -141,72 +143,42 @@ Khung **"Bộ đếm camera này"** hiện số đang thấy / trong / ngoài th
 
 ---
 
-## Đồ vật (`/world`) – nhận diện đồ vật theo từ khóa
+## PPE (`/ppe`) – mũ bảo hộ và găng tay
 
-Các thay đổi trên trang này **tự lưu**. Model YOLOE nhận diện theo từ khóa tiếng Anh, không cần train.
-
-### Bật / tắt và hiệu năng
+Các thay đổi trên trang này **tự lưu**. Chỉ người đang ở trong vùng polygon có bật task PPE mới được kiểm tra.
 
 | Mục | Ý nghĩa | Gợi ý |
 |---|---|---|
-| Nút Đang BẬT / TẮT | Bật nhận diện đồ vật cho toàn hệ thống | |
-| Chạy mỗi N khung hình | Quét đồ vật mỗi N khung (khung người vẫn cập nhật mỗi khung) | 3. Máy yếu / nhiều camera: 4–6 |
-| imgsz | Kích thước ảnh cả khung đưa vào model đồ vật. Khung 1920×1080 bị thu nhỏ về mức này, vật nhỏ (kính, điện thoại) dễ bị bỏ sót | 960 nếu có GPU; máy yếu 640 |
-| Phạm vi tìm | **Đồ vật người mang** (track vật trên cả khung rồi chỉ giữ vật nằm trên người – khuyên dùng) hoặc **Mọi đồ vật trong khung** (không track, không làm mượt) | Đồ vật người mang |
-| Nới rộng khung người (%) | Vật nằm trong khung người nới rộng thêm chừng này mới tính là người đó mang (bắt vật cầm tay, túi đeo bên hông) | 10 |
-| Bỏ người thấp hơn (px) | Người ở xa có khung thấp hơn mức này không được gán đồ vật | 60 |
-| Camera nhận diện đồ vật | Bật/tắt riêng từng camera | |
-
-### Ngưỡng
-
-| Mục | Ý nghĩa | Mặc định |
-|---|---|---|
-| Ngưỡng tin cậy đồ vật | Model phải chắc ít nhất mức này mới tính là đã thấy vật | 0.3 |
-| Ngưỡng vũ khí | Như trên, riêng nhóm vũ khí | 0.45 |
-| Ngưỡng hiển thị | Vật đã theo dõi nhưng độ tin cậy dưới mức này thì không vẽ, không gửi đi | 0.6 |
-| Ô "ngưỡng" cạnh từng nhóm | Ngưỡng riêng cho nhóm đó (để trống = dùng ngưỡng chung) | Phụ kiện 0.6 |
-
-### Làm mượt và chống nhận nhầm
-
-| Mục | Ý nghĩa | Mặc định |
-|---|---|---|
-| Hiện đồ vật khi thấy ≥ N / 5 lần chạy | Vật phải xuất hiện đủ số lần mới hiện (chống nhấp nháy) | 2 |
-| Cảnh báo vũ khí khi thấy ≥ N / 5 lần | Như trên, riêng vũ khí (chặt hơn để tránh báo động giả) | 3 |
-| Ẩn sau N lần liên tiếp không thấy | Vật biến mất bao lâu thì ẩn | 3 |
-| Độ chênh tối thiểu (×) | Một vùng có nhiều cách đọc (nón / tóc, dao / điện thoại): cách đọc dẫn đầu phải hơn cách đọc thứ hai N lần mới hiện. 1 = tắt | 1.5 |
-| Bỏ vật nhỏ hơn (px) | Vật quá nhỏ trên ảnh thường là nhận nhầm | 14 |
-| Bỏ vật đứng yên khi người di chuyển | Loại đồ của khung cảnh: vật nằm yên khi không ai mang (balo dưới sàn, túi trên bàn) kể cả khi sau đó có người đứng cạnh, và vật đứng yên trong khi người đi ngang. Vật được nhặt lên mang đi thì hiện lại | Bật |
-
-### Từ vựng
-
-- Click một từ để bật/tắt (từ tắt hiển thị mờ). Tick ô nhóm để bật/tắt cả nhóm. **Bật tất cả / Tắt tất cả**. Ô tìm kiếm để lọc.
-- Nhóm **Quần áo & tóc** không bao giờ hiển thị: model vẫn nhận diện để loại các nhận nhầm (thân áo bị đoán là ba lô, tóc bị đoán là nón). Không nên tắt nhóm này.
-- Mỗi loại vật chỉ có một nhãn (`hat` bắt cả mũ lưỡi trai, mũ len…). Rê chuột lên một từ để xem các prompt của nó.
-- **Thêm từ mới**: mỗi dòng một từ tiếng Anh, có thể kèm tiếng Việt và prompt phụ: `nhãn | tiếng Việt | prompt1, prompt2`, ví dụ `umbrella|ô dù`. Bấm **Thêm & build lại** (vài giây). Dùng danh từ tiếng Anh thông dụng nhất; **không thêm từ đồng nghĩa** (thành nhãn riêng hay prompt phụ): đo thực tế cho thấy độ nhạy giảm (ví dụ "glasses" một mình bắt được kính, trộn thêm "sunglasses" thì mất). Từ tự thêm nằm trong nhóm "Tự thêm", có nút × để xóa.
-
-### Khi nào chỉnh gì
+| Nút Đang BẬT / TẮT | Bật kiểm tra PPE cho toàn hệ thống | |
+| Mũ bảo hộ / Găng tay | Loại nào được báo "Thiếu" (găng xét từng tay) | Cả hai |
+| Báo thiếu (NO-*) | Tắt: chỉ hiện những gì model tìm được, không bao giờ báo thiếu | Bật (model gần như không thấy PPE trên camera triển lãm) |
+| Xác nhận khi ≥ N / 5 lần | Bộ phận phải trông như vậy ở ≥ N trong 5 lần kiểm tra gần nhất mới báo Có / Thiếu. Cao = ít nhấp nháy, chậm hơn | 3 |
+| Cách chạy | **Crop từng người** (chính xác với người ở xa) hoặc **Cả khung hình** (nhanh khi đông người) | Crop |
+| Ngưỡng tin cậy, imgsz | Của model `yolo_ppe.pt` | 0.25, 640 |
+| Chạy mỗi N khung hình | Kiểm tra PPE mỗi N khung; giữa hai lần kết quả cũ được giữ | 2. Máy yếu: 3–4 |
+| Chỉ đo điểm ảnh của người | Dùng mask người (`yolo26n-seg.pt`) để ghế / bàn màu da sau tay không bị tính là tay trần | Bật |
+| Camera có task PPE | Bật / tắt task PPE trên vùng đã vẽ; camera chưa có vùng thì bấm **Vẽ vùng** | |
 
 | Hiện tượng | Thử |
 |---|---|
-| Vật nhỏ bị nhận nhầm (vòng tay, tai nghe…) | Tăng ô ngưỡng của nhóm Phụ kiện, tăng "Bỏ vật nhỏ hơn" |
-| Tóc bị nhận là nón / mũ | Tăng "Độ chênh tối thiểu" lên 2, hoặc tăng ngưỡng nhóm Nón & mũ lên 0.5 |
-| Đồ vật thật không hiện | Giảm "Ngưỡng hiển thị", giảm "Hiện khi thấy ≥ N" xuống 1 |
-| Nhãn nhảy liên tục | Tăng "Hiện khi thấy ≥ N", tăng "Độ chênh tối thiểu" |
-| Báo động vũ khí giả | Tăng "Ngưỡng vũ khí" và "Cảnh báo khi thấy ≥ N"; tắt từ hay bị nhầm (scissors, baseball bat…) |
-| Đồ trên bàn bị gán cho người ngồi cạnh | Giới hạn đã biết: người đã ngồi yên cạnh vật từ trước thì không phân biệt được; giảm "Nới rộng khung người" |
-| Vật nhỏ trên người ở xa không hiện | Tăng imgsz lên 960 (tốn GPU hơn) |
-| FPS thấp | Tăng "Chạy mỗi N khung", giảm imgsz |
+| Nhãn nhảy Có ↔ Thiếu | Tăng "Xác nhận khi ≥ N" lên 4 |
+| Người vào vùng lâu mới có nhãn | Giảm "Xác nhận khi ≥ N" xuống 2, giảm "Chạy mỗi N khung" |
+| Tay trước ghế / bàn màu nâu bị báo thiếu găng | Bật "Chỉ đo điểm ảnh của người" |
+| Người đứng sát camera không được kiểm tra | Vùng chưa phủ tới mép dưới khung hình: vẽ rộng vùng ở trang Line / Task |
+| FPS thấp | Tăng "Chạy mỗi N khung", chuyển sang "Cả khung hình" |
+
+Giới hạn đã biết: găng màu da, mũ đen, người tóc sáng / hói có thể bị đọc sai; ánh sáng yếu làm khó phân biệt da.
 
 ---
 
 ## Dữ liệu (`/data`)
 
 - **Bộ lọc**: camera, khoảng thời gian (Từ / Đến) hoặc nút nhanh **Hôm nay / 24 giờ / 7 ngày**, bấm **Xem**.
-- **Thẻ tổng quan** (toàn bộ database): dung lượng, số lượt người và lượt có cảnh báo đã lưu, số sự kiện vào/ra và cảnh báo, bản ghi đầu tiên, hàng đợi ghi.
+- **Thẻ tổng quan** (toàn bộ database): dung lượng, số lượt người và lượt thiếu PPE đã lưu, số sự kiện vào/ra và cảnh báo PPE, bản ghi đầu tiên, hàng đợi ghi.
 - **Theo giờ** (theo bộ lọc): tổng Vào / Ra / Lượt người / Cảnh báo và biểu đồ theo từng giờ.
-- **Đồ vật xuất hiện nhiều nhất**: số lượt người mang mỗi loại. Click một vật để lọc bảng lượt người theo vật đó.
-- **Bảng Lượt người**: mỗi người một dòng (thời gian, thời lượng, phía đầu/cuối, đồ vật). Lọc "Chỉ người có cảnh báo", "Mang theo …". 50 dòng/trang.
-- **Bảng Sự kiện**: vào/ra, cảnh báo, camera mất tín hiệu, reset.
+- **PPE theo lượt người**: số lượt người có mỗi nhãn PPE. Click một nhãn để lọc bảng lượt người theo nhãn đó.
+- **Bảng Lượt người**: mỗi người một dòng (thời gian, thời lượng, phía đầu/cuối, nhãn PPE, THIẾU PPE). Lọc "Chỉ người thiếu PPE", "Nhãn PPE …". 50 dòng/trang.
+- **Bảng Sự kiện**: vào/ra, cảnh báo PPE, camera mất tín hiệu, reset (cảnh báo vũ khí cũ vẫn xem được).
 - **Xuất CSV**: tải bảng đang lọc (mở được bằng Excel, tiếng Việt hiển thị đúng).
 - **Cấu hình lưu trữ** (bấm **Lưu**): Ghi dữ liệu; Lưu lượt người; Khôi phục bộ đếm khi khởi động lại; Lấy mẫu số liệu mỗi N giây; Giữ dữ liệu N ngày (0 = mãi mãi, dữ liệu cũ hơn tự xóa).
 - **Xóa toàn bộ dữ liệu**: phải gõ `DELETE` để xác nhận, không khôi phục được.
@@ -223,3 +195,14 @@ Trang cho bên vận hành kết nối app hiển thị. Định dạng dữ li�
 - **Client đang kết nối**: địa chỉ, chủ đề, camera, thời gian kết nối, số message gửi/nhận.
 - **Xem message trực tiếp**: chọn chủ đề và camera, **Kết nối** để xem đúng dữ liệu app nhận; **Tạm dừng**, **Xóa**; click một dòng để xem JSON đầy đủ.
 - Cuối trang: định dạng message và code mẫu JavaScript / Python.
+
+---
+
+## Màn hình 3D (`/show/`)
+
+Màn hình trình chiếu cho khách xem (project `Greco2026DashBoard`, build bằng `build_show.bat`, mở toàn màn hình bằng `start_show.bat`).
+
+- **Người trong khung** (trái trên): mỗi người một dòng với Có mũ / Thiếu mũ / Có găng 2 tay / Thiếu găng 1 tay…; "chưa rõ" = đang trong vùng nhưng chưa đủ số lần xác nhận. Click để xem chi tiết từng nhãn (model hay suy ra từ hình, độ tin cậy).
+- **Tổng quan** (phải): đang thấy, trong / ngoài vùng, số người đang kiểm tra PPE, số người thiếu PPE, đếm từng nhãn.
+- **Camera** (trái dưới): video trực tiếp của camera đang chọn. Bấm vào hình hoặc nút ⤢ để phóng to giữa màn hình; nút thu nhỏ, phím `Esc` hoặc bấm ra ngoài để trả về góc.
+- Banner đỏ + tiếng bíp khi có người thiếu PPE (nút loa để tắt tiếng). Nút **Test** chạy dữ liệu giả, không cần server (không có hình camera).

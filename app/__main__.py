@@ -21,7 +21,7 @@ def main() -> None:
 
     from .paths import MODELS_DIR
 
-    # Ultralytics resolves auto-downloads and the CLIP cache (weights/clip) against the cwd.
+    # Ultralytics resolves auto-downloads against the cwd.
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     os.chdir(MODELS_DIR)
 

@@ -57,7 +57,7 @@ function renderNav(active) {
     ["/", "live", "Live"],
     ["/cameras", "cameras", "Cameras"],
     ["/calibrate", "calibrate", "Line / Task"],
-    ["/world", "world", "Đồ vật"],
+    ["/ppe", "ppe", "PPE"],
     ["/data", "data", "Dữ liệu"],
     ["/socket", "socket", "Socket"],
   ];
@@ -76,4 +76,26 @@ function renderNav(active) {
 function fmtTime(ts) {
   const d = new Date(ts * 1000);
   return d.toLocaleTimeString("vi-VN", { hour12: false });
+}
+
+function fmtDateTime(ts) {
+  if (!ts) return "–";
+  return new Date(ts * 1000).toLocaleString("vi-VN", { hour12: false });
+}
+
+function fmtDuration(s) {
+  if (s === null || s === undefined) return "–";
+  s = Math.round(Number(s));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
 }

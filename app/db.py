@@ -1,4 +1,7 @@
-"""SQLite storage: events (crossing, alert, camera, reset), per-person track summaries and periodic samples.
+"""SQLite storage: events (crossing, ppe_alert, camera, reset), per-person track summaries and periodic samples.
+
+Column names predate the PPE-only build: tracks.items / tracks.alert and samples.objects / samples.alerts now hold
+PPE labels and PPE alerts (rows from the object-detector era keep their old meaning).
 
 A single writer thread owns the write connection (batched inserts, periodic sampling, retention purge);
 reads open short-lived connections (WAL mode allows concurrent readers).
@@ -193,7 +196,7 @@ class Database:
             cr = cam.get("crossing") or {}
             rows.append((
                 now, cam["id"], cam.get("persons", 0), cr.get("entries", 0), cr.get("exits", 0),
-                cam.get("alerts", 0), json.dumps(cam.get("objects") or {}, ensure_ascii=False),
+                cam.get("ppe_alerts", 0), json.dumps(cam.get("ppe") or {}, ensure_ascii=False),
             ))
         if rows:
             with conn:
@@ -314,7 +317,7 @@ class Database:
                 d = buckets.setdefault(b, {"in": 0, "out": 0, "alerts": 0, "tracks": 0})
                 if typ == "crossing" and direction in ("in", "out"):
                     d[direction] += n
-                elif typ == "alert":
+                elif typ in ("alert", "ppe_alert"):
                     d["alerts"] += n
             clauses2, params2 = [], []
             self._where(clauses2, params2, ts_col="first_ts", camera_id=camera_id, ts_from=ts_from, ts_to=ts_to)

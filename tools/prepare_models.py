@@ -1,6 +1,7 @@
-"""Download / copy all weights into models/ and bake the object vocabulary so the app runs offline.
+"""Download / copy the pose and person-mask weights into models/ so the app runs offline.
 
-Run once on a machine with internet:  python tools/prepare_models.py [--device 0|cpu] [--skip-world]
+Run once on a machine with internet:  python tools/prepare_models.py
+yolo_ppe.pt is not downloadable: copy it into models/ by hand.
 """
 
 from __future__ import annotations
@@ -14,15 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.paths import (  # noqa: E402
-    MASK_MODEL_DEFAULT,
-    MODELS_DIR,
-    PERSON_MODEL_DEFAULT,
-    VOCABULARY_FILE,
-    WORLD_BAKED_MODEL,
-    WORLD_BASE_MODEL,
-)
-from app.vocabulary import class_prompts, flatten_classes, load_vocabulary  # noqa: E402
+from app.paths import MASK_MODEL_DEFAULT, MODELS_DIR, PERSON_MODEL_DEFAULT, PPE_MODEL_DEFAULT  # noqa: E402
 
 PRODUCTION_MODELS = ROOT.parent / "Production" / "models"
 
@@ -55,36 +48,18 @@ def ensure_mask_model() -> None:
     print(f"[ok] downloaded {target.name}")
 
 
-def ensure_world(device: str) -> None:
-    from app.world import _model_class, bake_vocabulary
-
-    base = MODELS_DIR / WORLD_BASE_MODEL
-    if not base.is_file():
-        _model_class(WORLD_BASE_MODEL)(WORLD_BASE_MODEL)
-        print(f"[ok] downloaded {base.name}")
-    else:
-        print(f"[ok] {base.name} already present")
-
-    doc = load_vocabulary(VOCABULARY_FILE)
-    classes = flatten_classes(doc)
-    print(f"[..] encoding {len(classes)} classes (first run downloads the text encoder, MobileCLIP ~240 MB)")
-    model = bake_vocabulary(classes, class_prompts(doc), device=device)
-    names = model.names if isinstance(model.names, dict) else dict(enumerate(model.names))
-    print(f"[ok] baked {len(names)} classes -> {MODELS_DIR / WORLD_BAKED_MODEL}")
-
-
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--device", default="0")
-    ap.add_argument("--skip-world", action="store_true")
+    ap.add_argument("--device", default="0")  # kept for old scripts; downloads do not need a device
+    ap.add_argument("--skip-world", action="store_true", help=argparse.SUPPRESS)  # object detector removed
     args = ap.parse_args()
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     os.chdir(MODELS_DIR)
     ensure_person_model()
     ensure_mask_model()
-    if not args.skip_world:
-        ensure_world(args.device)
+    if not (MODELS_DIR / PPE_MODEL_DEFAULT).is_file():
+        print(f"[!!] {PPE_MODEL_DEFAULT} missing: copy it into {MODELS_DIR} (PPE stays off without it)")
     print("[done] models ready in", MODELS_DIR)
 
 

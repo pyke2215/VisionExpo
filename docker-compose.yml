@@ -12,7 +12,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./config:/app/config   # settings.json (cameras, line, socket, db), vocabulary.json
+      - ./config:/app/config   # settings.json (cameras, line, socket, db, ppe)
       - ./data:/app/data       # exhibition.sqlite3
     environment:
       TZ: Asia/Ho_Chi_Minh

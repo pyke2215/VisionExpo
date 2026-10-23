@@ -20,7 +20,7 @@ echo Python: %PY%
 
 if not exist ".venv\Scripts\python.exe" (
   echo.
-  echo [1/5] Tao moi truong .venv ...
+  echo [1/4] Tao moi truong .venv ...
   %PY% -m venv .venv || goto :fail
 )
 set "VPY=%~dp0.venv\Scripts\python.exe"
@@ -30,24 +30,19 @@ echo.
 set "DEVICE=cpu"
 nvidia-smi >nul 2>nul && set "DEVICE=0"
 if "%DEVICE%"=="0" (
-  echo [2/5] Phat hien GPU NVIDIA - cai PyTorch CUDA 12.6 ...
+  echo [2/4] Phat hien GPU NVIDIA - cai PyTorch CUDA 12.6 ...
   "%VPY%" -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126 || goto :fail
 ) else (
-  echo [2/5] Khong co GPU NVIDIA - cai PyTorch CPU ^(cham hon^) ...
+  echo [2/4] Khong co GPU NVIDIA - cai PyTorch CPU ^(cham hon^) ...
   "%VPY%" -m pip install torch torchvision || goto :fail
 )
 
 echo.
-echo [3/5] Cai thu vien ...
+echo [3/4] Cai thu vien ...
 "%VPY%" -m pip install -r requirements.txt || goto :fail
 
 echo.
-echo [4/5] Cai CLIP tokenizer ^(de ma hoa tu vung do vat^) ...
-"%VPY%" -m pip install "git+https://github.com/ultralytics/CLIP.git"
-if errorlevel 1 echo [CANH BAO] Khong cai duoc CLIP ^(can git^). App van chay, chi khong them tu moi duoc.
-
-echo.
-echo [5/5] Tai model + build tu vung do vat ^(YOLOE^) ...
+echo [4/4] Tai model nguoi + mask ^(yolo_ppe.pt chep tay vao models\^) ...
 "%VPY%" tools\prepare_models.py --device %DEVICE% || goto :fail
 
 if not exist "config\settings.json" (

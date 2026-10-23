@@ -6,7 +6,3 @@ fastapi>=0.110
 uvicorn>=0.29
 websockets>=12
 lap>=0.5.12
-# CLIP tokenizer (only needed to encode new object words): installed by setup.bat from
-# git+https://github.com/ultralytics/CLIP.git
-ftfy
-regex

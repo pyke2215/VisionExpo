@@ -2,8 +2,9 @@ renderNav("data");
 
 const $ = (id) => document.getElementById(id);
 const PAGE = 50;
-const EVENT_TYPES = { crossing: "Vào / ra", alert: "Cảnh báo vũ khí", ppe_alert: "Cảnh báo PPE", camera: "Camera", reset: "Reset đếm" };
-const st = { labels: { vi: {}, alerts: new Set() }, cams: {}, tab: "tracks", tPage: 0, ePage: 0 };
+const EVENT_TYPES = { crossing: "Vào / ra", ppe_alert: "Cảnh báo PPE", alert: "Cảnh báo vũ khí (cũ)", camera: "Camera", reset: "Reset đếm" };
+const PPE_VI = { Hardhat: "Có mũ", "NO-Hardhat": "Thiếu mũ", Gloves: "Có găng", "NO-Gloves": "Thiếu găng" };
+const st = { labels: { vi: PPE_VI, alerts: new Set(["NO-Hardhat", "NO-Gloves"]) }, cams: {}, tab: "tracks", tPage: 0, ePage: 0 };
 
 // ---------- filters ----------
 function toLocalInput(d) {
@@ -41,9 +42,9 @@ async function loadSummary() {
   const cards = [
     [fmtBytes(s.size_bytes), "Dung lượng"],
     [s.tracks, "Lượt người đã lưu"],
-    [s.alert_tracks, "Lượt có cảnh báo"],
+    [s.alert_tracks, "Lượt thiếu PPE"],
     [ev.crossing || 0, "Sự kiện vào / ra"],
-    [ev.alert || 0, "Sự kiện cảnh báo"],
+    [ev.ppe_alert || 0, "Cảnh báo PPE"],
     [s.samples, "Mẫu số liệu"],
     [fmtDateTime(s.first_ts), "Bản ghi đầu tiên"],
     [s.error ? "Lỗi" : s.queue, s.error ? esc(s.error) : "Đang chờ ghi"],
@@ -132,7 +133,7 @@ async function loadTracks() {
         <td>${side(t.first_side)}${t.first_side !== t.last_side ? " → " + side(t.last_side) : ""}</td>
         <td class="items"><div class="chips">${Object.entries(t.items)
           .map(([k, v]) => `<span class="chip ${st.labels.alerts.has(k) ? "alert" : ""}" title="${v} khung">${itemLabel(k)}</span>`)
-          .join("") || '<span class="muted small">–</span>'}${t.alert ? '<span class="tag alert">VŨ KHÍ</span>' : ""}</div></td></tr>`).join("")
+          .join("") || '<span class="muted small">–</span>'}${t.alert ? '<span class="tag alert">THIẾU PPE</span>' : ""}</div></td></tr>`).join("")
     : `<tr><td colspan="6" class="muted">Không có dữ liệu</td></tr>`;
   $("trackInfo").textContent = `${r.total ? st.tPage * PAGE + 1 : 0}–${Math.min(r.total, (st.tPage + 1) * PAGE)} / ${r.total}`;
   $("tPrev").disabled = st.tPage === 0;
@@ -232,8 +233,7 @@ $("btnClearDb").onclick = async () => {
     .map(([k, v]) => `<label class="check"><input type="checkbox" name="eType" value="${k}" ${k !== "camera" ? "checked" : ""}/> ${v}</label>`)
     .join("");
   document.querySelectorAll("input[name=eType]").forEach((el) => (el.onchange = () => { st.ePage = 0; loadEvents(); }));
-  const [cams, labels] = await Promise.all([api("/api/cameras"), loadViLabels()]);
-  st.labels = labels;
+  const cams = await api("/api/cameras");
   cams.forEach((c) => (st.cams[c.id] = c.name));
   $("fCamera").innerHTML += cams.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
   const today = new Date();

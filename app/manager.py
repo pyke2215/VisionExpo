@@ -1,4 +1,4 @@
-"""Owns camera workers and the shared object detector (WorldService); applies settings changes."""
+"""Owns camera workers and the shared PPE detector (PpeService); applies settings changes."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from .paths import DATABASE_FILE, resolve_model
 from .ppe import PpeService
 from .settings_store import RESTART_FIELDS, SettingsStore
 from .worker import CameraWorker
-from .world import WorldService
 
 
 def _usable_device(device: str) -> str:
@@ -32,7 +31,6 @@ class CameraManager:
         self.store = store
         self.device = _usable_device(device_override or str(store.get("device") or "0"))
         self.person_weights = resolve_model(store.get("person_model"))
-        self.world = WorldService(store.get("world") or {}, device=self.device)
         self.ppe = PpeService(store.get("ppe") or {}, device=self.device)
         self.hub = EventHub()
         self.db = Database(DATABASE_FILE, cfg_getter=lambda: store.get("database") or {}, status_getter=self.status)
@@ -73,7 +71,6 @@ class CameraManager:
                 cam,
                 person_weights=self.person_weights,
                 device=self.device,
-                world=self.world,
                 ppe=self.ppe,
                 hub=self.hub,
                 initial_counts=self._initial_counts(cam["id"], old),
@@ -129,12 +126,7 @@ class CameraManager:
     def update_section(self, key: str, patch: dict) -> dict:
         return self.store.update_global({key: patch})[key]
 
-    # ---------- world ----------
-    def update_world(self, patch: dict) -> dict:
-        data = self.store.update_global({"world": patch})
-        self.world.update_config(data["world"])
-        return data["world"]
-
+    # ---------- PPE ----------
     def update_ppe(self, patch: dict) -> dict:
         data = self.store.update_global({"ppe": patch})
         self.ppe.update_config(data["ppe"])
@@ -145,7 +137,7 @@ class CameraManager:
         cams = []
         totals = {
             "persons": 0, "inside": 0, "outside": 0, "entries": 0, "exits": 0,
-            "objects": 0, "alerts": 0, "ppe_alerts": 0,
+            "ppe_alerts": 0,
         }
         for cam in self.store.cameras():
             w = self.worker(cam["id"])
@@ -159,13 +151,10 @@ class CameraManager:
             totals["exits"] += s["crossing"]["exits"]
             totals["inside"] += s["crossing"].get("inside") or 0
             totals["outside"] += s["crossing"].get("outside") or 0
-            totals["objects"] += sum(s["objects"].values())
-            totals["alerts"] += s["alerts"]
             totals["ppe_alerts"] += s.get("ppe_alerts", 0)
         return {
             "cameras": cams,
             "totals": totals,
-            "world": self.world.info(),
             "ppe": self.ppe.info(),
             "device": self.device,
         }

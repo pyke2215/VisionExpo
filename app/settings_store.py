@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .paths import MASK_MODEL_DEFAULT, PERSON_MODEL_DEFAULT, PPE_MODEL_DEFAULT, SETTINGS_FILE, WORLD_BAKED_MODEL
+from .paths import MASK_MODEL_DEFAULT, PERSON_MODEL_DEFAULT, PPE_MODEL_DEFAULT, SETTINGS_FILE
 
 ZONE_TASKS = ("count", "ppe")
 
@@ -25,7 +25,6 @@ CAMERA_DEFAULTS: dict[str, Any] = {
     "jpeg_quality": 75,
     "show_skeleton": True,
     "show_boxes": True,
-    "world_enabled": True,
     "crossing": {
         "enabled": True,
         "mode": "line",
@@ -39,29 +38,6 @@ CAMERA_DEFAULTS: dict[str, Any] = {
 GLOBAL_DEFAULTS: dict[str, Any] = {
     "device": "0",
     "person_model": PERSON_MODEL_DEFAULT,
-    "world": {
-        "enabled": False,
-        "model": WORLD_BAKED_MODEL,
-        "conf": 0.3,
-        "alert_conf": 0.45,
-        "category_conf": {"accessories": 0.6},  # per-category override; null = use conf / alert_conf
-        "min_obj_px": 14,
-        "show_conf": 0.6,  # objects below this (smoothed) confidence are tracked but not drawn / reported
-        "label_margin": 1.5,  # rival readings of one region (hat vs hair): winner needs this x the runner-up
-        "imgsz": 640,
-        "every_n": 3,
-        "disabled_classes": [],
-        "attach_to_person": True,
-        "scope": "person",
-        "person_margin": 0.1,  # person box enlarged by this fraction when giving it the objects it carries
-        "min_person_px": 60,
-        "confirm_hits": 2,
-        "alert_hits": 3,
-        "drop_misses": 3,
-        "reject_static": True,
-        "clip_verify": False,  # after YOLOE, score each crop with CLIP ViT-B/32 and drop below clip_min
-        "clip_min": 0.22,  # cosine similarity; short labels usually land ~0.20–0.30
-    },
     "ppe": {
         "enabled": True,
         "model": PPE_MODEL_DEFAULT,

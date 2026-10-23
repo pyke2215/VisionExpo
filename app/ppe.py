@@ -340,6 +340,7 @@ class PpeService:
         self.last_infer_ms = 0.0
         self._class_ids: list[int] = []
         self.seg = None  # person segmentation for the glove check; None = judge the whole hand circle
+        self._seg_loading = False
         self.last_mask_ms = 0.0
         if self.cfg.get("enabled", True):
             self.ensure_loaded_async()
@@ -352,6 +353,21 @@ class PpeService:
         self.cfg = dict(cfg)
         if self.enabled:
             self.ensure_loaded_async()
+        if self.model is not None and self.seg is None and self.cfg.get("person_mask", True):
+            threading.Thread(target=self._load_seg_once, name="ppe-seg-load", daemon=True).start()
+
+    def _load_seg_once(self) -> None:
+        """person_mask switched on while running: the seg model was skipped (or failed) at startup."""
+        with self._state_lock:
+            if self._seg_loading or self.seg is not None:
+                return
+            self._seg_loading = True
+        try:
+            from ultralytics import YOLO
+
+            self._load_seg(YOLO)
+        finally:
+            self._seg_loading = False
 
     def ensure_loaded_async(self) -> None:
         with self._state_lock:
@@ -445,7 +461,8 @@ class PpeService:
         """Kinds whose absence is reported (inferred NO-*); empty when infer_missing is off."""
         if not self.cfg.get("infer_missing", True):
             return []
-        return [k for k in (self.cfg.get("require") or list(KIND_LABELS)) if k in KIND_LABELS]
+        req = self.cfg.get("require")
+        return [k for k in (list(KIND_LABELS) if req is None else req) if k in KIND_LABELS]  # [] = check nothing
 
     @property
     def confirm_runs(self) -> int:
@@ -537,7 +554,8 @@ class PpeService:
             "error": self.error,
             "model": self.cfg.get("model") or PPE_MODEL_DEFAULT,
             "mode": self.mode,
-            "person_mask": self.seg is not None,
+            "person_mask": self.seg is not None and bool(self.cfg.get("person_mask", True)),
+            "mask_model": self.cfg.get("mask_model") or MASK_MODEL_DEFAULT,
             "last_mask_ms": round(self.last_mask_ms, 1),
             "required": self.required,
             "classes": [self._id_to_name[i] for i in self._class_ids] if self.model is not None else list(PPE_CLASSES),

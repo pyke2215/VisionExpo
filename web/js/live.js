@@ -7,8 +7,6 @@ const state = {
   auto: false,
   autoTimer: null,
   gridTimer: null,
-  vi: {},
-  alertLabels: new Set(),
 };
 const AUTO_INTERVAL_MS = 10000;
 const PPE_VI = { Hardhat: "Có mũ", "NO-Hardhat": "Thiếu mũ", Gloves: "Có găng", "NO-Gloves": "Thiếu găng" };
@@ -84,7 +82,6 @@ function renderList() {
       const sub =
         c.status === "running"
           ? `${c.fps ?? 0} fps · ${c.persons ?? 0} người${cr.enabled ? ` · trong ${cr.inside} / ngoài ${cr.outside}` : ""}` +
-            (c.alerts ? ` · <span style="color:var(--red)">${c.alerts} cảnh báo</span>` : "") +
             (c.ppe_alerts ? ` · <span style="color:var(--red)">${c.ppe_alerts} thiếu PPE</span>` : "")
           : esc(c.error || statusText(c.status));
       return `<div class="cam-item ${!state.grid && c.id === state.selected ? "active" : ""}" data-id="${esc(c.id)}">
@@ -101,11 +98,9 @@ function renderSide() {
   $("peopleList").innerHTML = people.length
     ? people
         .map(
-          (p) => `<div class="it ${p.alert || p.ppe_alert ? "alert" : ""}"><strong>#${p.track_id ?? "?"}</strong>
+          (p) => `<div class="it ${p.ppe_alert ? "alert" : ""}"><strong>#${p.track_id ?? "?"}</strong>
           <span class="tag ${p.side}">${p.side === "in" ? "TRONG" : p.side === "out" ? "NGOÀI" : "?"}</span>
-          ${p.alert ? `<span class="tag alert">VŨ KHÍ</span>` : ""}
           ${(p.ppe || []).map((l) => `<span class="tag ${l.startsWith("NO-") ? "alert" : "in"}">${esc(PPE_VI[l] || l)}</span>`).join("")}
-          <span class="muted small grow">${esc(p.items.map((x) => state.vi[x] || x).join(", "))}</span>
           ${state.grid ? `<span class="muted small">${esc(p.cam)}</span>` : ""}</div>`
         )
         .join("")
@@ -125,13 +120,6 @@ function renderSide() {
         .join("")
     : `<div class="muted small">Chưa có sự kiện</div>`;
 
-  const objCount = {};
-  cams.forEach((c) => Object.entries(c.objects || {}).forEach(([k, v]) => (objCount[k] = (objCount[k] || 0) + v)));
-  const objs = Object.entries(objCount).sort((a, b) => b[1] - a[1]);
-  $("objList").innerHTML = objs.length
-    ? objs.map(([k, v]) => `<span class="chip on ${state.alertLabels.has(k.toLowerCase()) ? "alert" : ""}">${esc(k)}<span class="vi">${esc(state.vi[k] || "")}</span> ×${v}</span>`).join("")
-    : `<span class="muted small">Không có</span>`;
-
   const ppeCams = cams.filter((c) => (c.crossing || {}).ppe_active);
   $("ppePanel").classList.toggle("hidden", !ppeCams.length);
   const ppeCount = {};
@@ -140,14 +128,6 @@ function renderSide() {
   $("ppeList").innerHTML = ppe.length
     ? ppe.map(([k, v]) => `<span class="chip on ${k.startsWith("NO-") ? "alert" : ""}">${esc(PPE_VI[k] || k)} ×${v}</span>`).join("")
     : `<span class="muted small">Chưa có ai trong vùng PPE</span>`;
-}
-
-async function loadVocabulary() {
-  try {
-    const w = await api("/api/world");
-    (w.vocabulary.categories || []).forEach((c) => c.items.forEach((it) => (state.vi[it.en.toLowerCase()] = it.vi)));
-    state.alertLabels = new Set(w.alert_labels || []);
-  } catch { /* optional */ }
 }
 
 async function poll() {
@@ -159,17 +139,12 @@ async function poll() {
     $("kPersons").textContent = s.totals.persons;
     $("kInside").textContent = s.totals.inside;
     $("kOutside").textContent = s.totals.outside;
-    $("kObj").textContent = s.totals.objects;
-    $("kAlert").textContent = s.totals.alerts || 0;
-    $("kAlertBox").classList.toggle("active", (s.totals.alerts || 0) > 0);
     $("kPpe").textContent = s.totals.ppe_alerts || 0;
     $("kPpeBox").classList.toggle("active", (s.totals.ppe_alerts || 0) > 0);
     const pp = s.ppe || {};
     $("ppeState").textContent = pp.enabled
       ? `PPE: ${pp.status}${pp.error ? " – " + pp.error : ""} · ${pp.mode} · ${pp.last_infer_ms} ms`
       : "PPE đang tắt";
-    const w = s.world;
-    $("worldState").textContent = w.enabled ? `Đồ vật: ${w.status}${w.error ? " – " + w.error : ""} · ${w.last_infer_ms} ms` : "Nhận diện đồ vật đang tắt";
     $("metaInfo").textContent = `device ${s.device} · ${runningCams().length}/${s.cameras.length} camera`;
     if (before !== after || !stage.querySelector("img")) renderStage();
     renderList();
@@ -228,6 +203,5 @@ document.addEventListener("keydown", (e) => {
   if (q.get("kiosk") === "1") document.body.classList.add("kiosk");
 })();
 
-loadVocabulary();
 poll();
 setInterval(poll, 1000);

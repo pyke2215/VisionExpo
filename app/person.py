@@ -22,8 +22,6 @@ class Person:
     conf: float
     keypoints: np.ndarray | None = None  # (17, 3) x, y, conf
     side: str = "unknown"  # crossing side: "in" | "out" | "unknown"
-    items: list[str] = field(default_factory=list)  # object labels attached to this person
-    alert: bool = False  # carries an item from an alert category (weapons)
     ppe: list = field(default_factory=list)  # PpeFinding attached (zone PPE task)
     ppe_alert: bool = False  # has a NO-* PPE finding
     ppe_zone: bool = False  # inside the zone of a camera with the ppe task (set each frame)

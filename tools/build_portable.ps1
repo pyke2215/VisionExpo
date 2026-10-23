@@ -76,11 +76,6 @@ if (-not (Test-Path $PyExe)) {
 
     Step "Python packages"
     Run $PyExe @("-m", "pip", "install", "--no-warn-script-location", "-r", (Join-Path $Root "requirements.txt"))
-    try {
-        Run $PyExe @("-m", "pip", "install", "--no-warn-script-location", "git+https://github.com/ultralytics/CLIP.git")
-    } catch {
-        Write-Warning "CLIP not installed (git missing?). App runs, but adding new object words will not work."
-    }
 
     # App-local VC++ runtime so the target PC does not need the redistributable installed.
     foreach ($dll in "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "vcruntime140.dll", "vcruntime140_1.dll", "concrt140.dll") {
@@ -106,10 +101,9 @@ foreach ($f in "README.md", "requirements.txt", "start.bat", "start_kiosk.bat") 
     Copy-Item (Join-Path $Root $f) $Dist -Force
 }
 
-$baked = Join-Path $Dist "models\yoloe_exhibition.pt"
 $pose = Join-Path $Dist "models\yolo26n-pose.pt"
 $seg = Join-Path $Dist "models\yolo26n-seg.pt"
-if (-not (Test-Path $baked) -or -not (Test-Path $pose) -or -not (Test-Path $seg)) {
+if (-not (Test-Path $pose) -or -not (Test-Path $seg)) {
     Step "Preparing models inside the package"
     Push-Location $Dist
     Run $PyExe @("tools\prepare_models.py", "--device", $(if ($Cpu) { "cpu" } else { "0" }))

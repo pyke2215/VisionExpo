@@ -49,7 +49,7 @@ function renderUrl() {
 ws.onmessage = (e) => {
   const msg = JSON.parse(e.data);
   if (msg.type === "crossing") console.log(msg.camera_id, "#" + msg.track_id, msg.direction);
-  if (msg.type === "alert") console.warn("ALERT", msg.camera_id, msg.items);
+  if (msg.type === "ppe_alert") console.warn("PPE", msg.camera_id, msg.track_id, msg.items);
   if (msg.type === "status") console.log("people now:", msg.totals.persons);
 };
 ws.onclose = () => setTimeout(() => location.reload(), 3000); // tự kết nối lại`;
@@ -64,8 +64,8 @@ async def main():
                     msg = json.loads(raw)
                     if msg["type"] == "crossing":
                         print(msg["camera_id"], msg["track_id"], msg["direction"])
-                    elif msg["type"] == "alert":
-                        print("ALERT", msg["camera_id"], msg["items"])
+                    elif msg["type"] == "ppe_alert":
+                        print("PPE", msg["camera_id"], msg["track_id"], msg["items"])
         except Exception as exc:
             print("reconnect in 3s:", exc)
             await asyncio.sleep(3)

@@ -77,10 +77,10 @@
 
 // status: định kỳ (status_hz)
 {"type":"status","ts":1791877285.9,
- "totals":{"persons":3,"inside":2,"outside":1,"entries":42,"exits":38,"objects":7,"alerts":0},
+ "totals":{"persons":3,"inside":2,"outside":1,"entries":42,"exits":38,"ppe_alerts":1},
  "cameras":[{"id":"camera_1","name":"Camera 1","status":"running","fps":14.9,
              "persons":3,"inside":2,"outside":1,"mode":"zone","entries":42,"exits":38,
-             "alerts":0,"objects":{"backpack":1,"glasses":2}}]}
+             "ppe":{"NO-Hardhat":1,"Gloves":2},"ppe_alerts":1}]}
 // persons = đang thấy; inside / outside = số người đang ở trong / ngoài vùng lúc này
 //   (mode "line": phía có điểm I là trong; null khi camera chưa vẽ line/vùng)
 // persons - inside - outside = người mới xuất hiện, chưa xác định phía
@@ -88,29 +88,24 @@
 
 // people: định kỳ (people_hz), toạ độ chuẩn hoá 0..1 theo frame_size
 {"type":"people","ts":...,"cameras":[{"id":"camera_1","frame_size":[1920,1080],
- "people":[{"track_id":27,"side":"in","alert":false,"ppe_alert":true,"items":["backpack","glasses"],
-            "objects":[{"label":"backpack","vi":"ba lô","category":"bags","conf":0.82,"alert":false,
-                        "box":[0.43,0.38,0.51,0.60]},
-                       {"label":"glasses","vi":"kính","category":"face","conf":0.71,"alert":false,
-                        "box":[0.45,0.31,0.48,0.33]}],
-            "ppe":[{"label":"NO-Hardhat","kind":"hardhat","conf":0.61,"alert":true,"box":[0.42,0.28,0.50,0.36]},
-                   {"label":"Gloves","kind":"gloves","conf":0.55,"alert":false,"box":[0.44,0.55,0.49,0.62]}],
+ "people":[{"track_id":27,"side":"in","ppe_zone":true,"ppe_alert":true,
+            "ppe":[{"label":"NO-Hardhat","kind":"hardhat","conf":0.61,"alert":true,"inferred":true,"box":[0.42,0.28,0.50,0.36]},
+                   {"label":"Gloves","kind":"gloves","conf":0.55,"alert":false,"inferred":true,"box":[0.44,0.55,0.49,0.62]}],
             "conf":0.88,"box":[0.41,0.30,0.52,0.86],"foot":[0.47,0.85]}]}]}
-// side: "in" | "out" | "unknown"; objects = đồ vật đang hiển thị (đã qua ngưỡng hiển thị + làm mượt)
-// ppe = Hardhat/Gloves (+ NO-*) khi vùng bật task ppe; chỉ gắn người side=in
-// label gộp (vd hat, glasses, gun); không gửi trường clip
+// side: "in" | "out" | "unknown"; ppe_zone = đang được kiểm tra PPE (trong vùng, hoặc vừa ra < 2 s)
+// ppe = Hardhat / Gloves / NO-Hardhat / NO-Gloves; găng tay tính từng tay (tối đa 2 mục gloves)
+// inferred = true khi suy ra từ khung xương + màu da (model không vẽ box); alert = nhãn NO-*
 
 // events: gửi ngay khi xảy ra
 {"type":"crossing","ts":...,"camera_id":"camera_1","track_id":27,"direction":"in","mode":"zone"}
 {"type":"crossing","ts":...,"camera_id":"camera_1","track_id":27,"direction":"out","mode":"zone","dwell_s":42.5}
-{"type":"alert","ts":...,"camera_id":"camera_1","track_id":31,"items":["knife"],"all_items":["backpack","knife"]}
 {"type":"ppe_alert","ts":...,"camera_id":"camera_1","track_id":27,"items":["NO-Hardhat"],"all_items":["NO-Hardhat","Gloves"]}
 {"type":"camera","ts":...,"camera_id":"camera_2","status":"offline","error":"stream stalled"}
 {"type":"reset","ts":...,"camera_id":"camera_1"}
 
-// tracks: tóm tắt 1 người sau khi rời khung (items = số khung thấy vật đó)
+// tracks: tóm tắt 1 người sau khi rời khung (items = số khung có nhãn PPE đó; alert = từng thiếu PPE)
 {"type":"track","ts":...,"camera_id":"camera_1","track_id":27,"first_ts":...,"last_ts":...,
- "duration":12.4,"frames":180,"items":{"backpack":120,"glasses":64},"alert":false,
+ "duration":12.4,"frames":180,"items":{"NO-Hardhat":120,"Gloves":64},"alert":true,
  "first_side":"out","last_side":"in"}</pre>
       </div>
       <div class="panel">

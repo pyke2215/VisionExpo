@@ -1,4 +1,4 @@
-"""One thread per camera: latest frame, person tracking, crossing count, object detection, overlay, JPEG."""
+"""One thread per camera: latest frame, person tracking, crossing count, PPE in zones, overlay, JPEG."""
 
 from __future__ import annotations
 
@@ -11,20 +11,17 @@ import numpy as np
 
 from .capture import FrameReader
 from .crossing import CrossingCounter
-from .draw import attach_objects, render
+from .draw import render
 from .events import EventHub
-from .items import ItemTracker
 from .person import Person, PersonTracker
 from .ppe import (
     HANDS, KIND_LABELS, MIN_CROP_PX, PpeEvidence, PpeFinding, PpeService, cover_state, expand_box, from_rel, hand_box,
     hand_key, hand_state, part_boxes, to_rel,
 )
-from .world import WorldObject, WorldService
 
 TRACK_END_S = 3.0  # a track unseen this long is considered gone and summarized
 MIN_TRACK_FRAMES = 5  # shorter tracks are flicker, not visitors
-MIN_ITEM_FRAMES = 3  # an item must be shown this many frames to count in the summary
-ALERT_REPEAT_S = 30.0
+MIN_ITEM_FRAMES = 3  # a PPE label must be shown this many frames to count in the summary
 PPE_ALERT_REPEAT_S = 8.0
 PPE_ZONE_GRACE_S = 2.0  # a person leaving the PPE zone stays checked this long (border jitter)
 STATE_OF_STATUS = {"running": "online", "offline": "offline", "error": "error", "reconnecting": "reconnecting"}
@@ -45,7 +42,6 @@ class CameraWorker:
         *,
         person_weights,
         device: str,
-        world: WorldService,
         ppe: PpeService | None = None,
         hub: EventHub | None = None,
         initial_counts: tuple[int, int] = (0, 0),
@@ -54,13 +50,11 @@ class CameraWorker:
         self.id = cfg["id"]
         self.person_weights = person_weights
         self.device = device
-        self.world = world
         self.ppe_svc = ppe
         self.hub = hub
         self.crossing = CrossingCounter(cfg.get("crossing"))
         self.crossing.entries, self.crossing.exits = initial_counts
         self._tracks: dict[int, dict] = {}
-        self._alerted: dict[int, float] = {}
         self._ppe_alerted: dict[tuple[int, str], float] = {}
         self._cam_state: str | None = None
         self.reader = FrameReader(cfg["source"])
@@ -77,13 +71,10 @@ class CameraWorker:
         self.fps = 0.0
         self.infer_ms = 0.0
         self.persons: list[Person] = []
-        self.objects: list[WorldObject] = []
         self.ppe_findings: list[PpeFinding] = []  # model boxes + inferred NO-* (drawn / reported)
         self._ppe_model: list[PpeFinding] = []  # last model boxes only, reused between PPE runs
         self._ppe_evidence: dict[int, PpeEvidence] = {}
         self._ppe_zone_until: dict[int, float] = {}
-        self.items = ItemTracker()
-        self._world_tick = 0
         self._ppe_tick = 0
 
     # ---------- lifecycle ----------
@@ -117,7 +108,6 @@ class CameraWorker:
 
     def stats(self) -> dict:
         persons = self.persons
-        objects = self.objects
         return {
             "id": self.id,
             "name": self.cfg.get("name", self.id),
@@ -132,16 +122,12 @@ class CameraWorker:
                 {
                     "track_id": p.track_id,
                     "side": p.side,
-                    "items": sorted(set(p.items)),
-                    "alert": p.alert,
                     "ppe_alert": p.ppe_alert,
                     "ppe": sorted({f.label for f in p.ppe}),
                 }
                 for p in persons
             ],
-            "objects": dict(Counter(o.label for o in objects)),
             "ppe": dict(Counter(f.label for f in self.ppe_findings)),
-            "alerts": sum(1 for p in persons if p.alert),
             "ppe_alerts": sum(1 for p in persons if p.ppe_alert),
             "crossing": self.crossing.stats(),
         }
@@ -151,18 +137,6 @@ class CameraWorker:
         size = self.reader.frame_size or (1, 1)
         w, h = float(size[0]), float(size[1])
         norm = lambda b: [round(b[0] / w, 4), round(b[1] / h, 4), round(b[2] / w, 4), round(b[3] / h, 4)]  # noqa: E731
-        objs_by_owner: dict[int, list[dict]] = {}
-        for o in self.objects:
-            if o.owner is None:
-                continue
-            objs_by_owner.setdefault(o.owner, []).append({
-                "label": o.label,
-                "vi": self.world.vi.get(o.label.lower(), o.label),
-                "category": o.category or self.world.categories.get(o.label.lower(), ""),
-                "conf": round(o.conf, 3),
-                "alert": o.alert,
-                "box": norm(o.box),
-            })
         ppe_by_owner: dict[int, list[dict]] = {}
         for f in self.ppe_findings:
             if f.owner is None:
@@ -181,10 +155,8 @@ class CameraWorker:
             people.append({
                 "track_id": p.track_id,
                 "side": p.side,
-                "alert": p.alert,
+                "ppe_zone": p.ppe_zone,
                 "ppe_alert": p.ppe_alert,
-                "items": sorted(set(p.items)),
-                "objects": objs_by_owner.get(p.track_id, []) if p.track_id is not None else [],
                 "ppe": ppe_by_owner.get(p.track_id, []) if p.track_id is not None else [],
                 "conf": round(p.conf, 3),
                 "box": norm(p.box),
@@ -219,21 +191,12 @@ class CameraWorker:
                 }
             t["last"] = now
             t["frames"] += 1
-            t["items"].update(set(p.items))
+            t["items"].update({f.label for f in p.ppe})  # summary "items" = PPE labels seen on this person
             if p.side != "unknown":
                 t["first_side"] = t["first_side"] or p.side
                 t["last_side"] = p.side
-            if p.alert:
+            if p.ppe_alert:
                 t["alert"] = True
-                if now - self._alerted.get(tid, 0.0) >= ALERT_REPEAT_S:
-                    self._alerted[tid] = now
-                    items = sorted(set(p.items))
-                    self._emit({
-                        "type": "alert",
-                        "track_id": tid,
-                        "items": [i for i in items if i.lower() in self.world.alerts],
-                        "all_items": items,
-                    })
         self._flush_stale(now)
 
     def _flush_stale(self, now: float) -> None:
@@ -242,7 +205,6 @@ class CameraWorker:
 
     def _finish_track(self, tid: int) -> None:
         t = self._tracks.pop(tid, None)
-        self._alerted.pop(tid, None)
         for key in [k for k in self._ppe_alerted if k[0] == tid]:
             self._ppe_alerted.pop(key, None)
         self._ppe_evidence.pop(tid, None)
@@ -517,28 +479,6 @@ class CameraWorker:
             for ev in self.crossing.update(persons, w, h):
                 self._emit({"type": "crossing", **ev})
 
-        objects = self.objects
-        world_on = self.world.enabled and cfg.get("world_enabled", True) and self.world.status == "ready"
-        per_person = self.world.scope == "person"
-        if world_on:
-            every_n = max(1, int(self.world.cfg.get("every_n", 3)))
-            if self._world_tick % every_n == 0:
-                if per_person:
-                    self.items.update(self.world.detect(frame, keep_rivals=True), persons, self.world.cfg)
-                else:
-                    objects = self.world.detect(frame)
-            self._world_tick += 1
-        else:
-            objects = []
-            self.items.clear()
-        show_conf = float(self.world.cfg.get("show_conf", 0.0))
-        if per_person:
-            objects = self.items.render(persons, show_conf)
-        else:
-            objects = [o for o in objects if o.conf >= show_conf]
-            if self.world.cfg.get("attach_to_person", True):
-                attach_objects(persons, objects)
-
         ppe_findings = self._ppe_model
         ppe_on = (
             self.ppe_svc is not None
@@ -591,15 +531,6 @@ class CameraWorker:
         if self.crossing.active:
             tasks = ",".join(self.crossing.tasks()) or "-"
             hud.append(f"INSIDE {cs['inside']}   OUTSIDE {cs['outside']}   tasks {tasks}")
-        if world_on:
-            n_alert = sum(1 for p in persons if p.alert)
-            hud.append(f"objects {len(objects)}" + (f"   ALERT {n_alert}" if n_alert else ""))
-            if self.world.cfg.get("clip_verify"):
-                c = self.world.clip
-                hud.append(
-                    f"CLIP {c.status}  keep {c.last_kept} drop {c.last_dropped}"
-                    + (f"  {c.last_ms:.0f}ms" if c.last_ms else "")
-                )
         if ppe_on:
             n_owned = sum(1 for f in ppe_findings if f.owner is not None)
             n_neg = sum(1 for f in ppe_findings if f.alert)
@@ -614,7 +545,6 @@ class CameraWorker:
         img = render(
             frame,
             persons=persons,
-            objects=objects,
             line_px=line_px,
             inward_px=inward_px,
             zone_px=zone_px,
@@ -624,6 +554,5 @@ class CameraWorker:
             ppe=ppe_findings,
         )
         self.persons = persons
-        self.objects = objects
         self.ppe_findings = ppe_findings
         self._publish(img)

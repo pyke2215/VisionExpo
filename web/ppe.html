@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PPE – Vision Expo</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <main class="col" style="gap:14px">
+    <section class="panel">
+      <div class="row" style="gap:16px">
+        <h2 style="margin:0">Kiểm tra PPE (mũ bảo hộ + găng tay)</h2>
+        <span class="badge" id="pStatus">…</span>
+        <span class="grow"></span>
+        <span class="muted small">Mọi thay đổi trên trang này được tự động lưu</span>
+        <button id="btnEnable">…</button>
+      </div>
+      <p class="muted small" id="pInfo"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Cần kiểm tra</h2>
+      <div class="row" style="gap:22px; align-items:flex-end">
+        <label class="check"><input type="checkbox" id="reqHardhat" /> Mũ bảo hộ</label>
+        <label class="check"><input type="checkbox" id="reqGloves" /> Găng tay (từng tay)</label>
+        <label class="check" title="Tắt: chỉ hiện những gì model tìm được, không bao giờ báo thiếu">
+          <input type="checkbox" id="inferMissing" /> Báo thiếu (NO-*) khi thấy rõ bộ phận mà không có PPE</label>
+        <label class="field" id="confirmWrap" title="Một bộ phận phải trông như vậy ở ≥ N trong 5 lần kiểm tra gần nhất mới báo Có / Thiếu. Cao hơn = ít nhấp nháy, phản ứng chậm hơn">
+          Xác nhận khi ≥ N / 5 lần
+          <input type="number" id="confirmRuns" min="1" max="5" style="width:90px" />
+        </label>
+      </div>
+      <p class="muted small" style="margin:8px 0 0">
+        Chỉ người đang ở trong vùng polygon có bật task PPE mới được kiểm tra (vùng vẽ ở trang Line / Task).
+        Người vừa bước ra khỏi vùng vẫn được giữ trạng thái thêm 2 giây để không nhấp nháy khi xoay người.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Model</h2>
+      <div class="row" style="gap:22px; align-items:flex-end">
+        <label class="field">Cách chạy
+          <select id="mode">
+            <option value="crop">Crop từng người trong vùng (chính xác hơn với người ở xa)</option>
+            <option value="frame">Cả khung hình một lần (nhanh hơn khi đông người)</option>
+          </select>
+        </label>
+        <label class="field">Ngưỡng tin cậy: <strong id="confVal"></strong>
+          <input type="range" id="conf" min="0.05" max="0.8" step="0.01" style="width:200px" />
+        </label>
+        <label class="field">imgsz
+          <select id="imgsz"><option>320</option><option>480</option><option>640</option><option>800</option><option>960</option></select>
+        </label>
+        <label class="field" title="Kiểm tra PPE mỗi N khung hình đã xử lý; giữa hai lần, kết quả cũ được giữ trên người">Chạy mỗi N khung hình
+          <input type="number" id="everyN" min="1" max="30" style="width:90px" />
+        </label>
+      </div>
+      <p class="muted small" style="margin:8px 0 0">
+        Trên camera triển lãm, model PPE gần như không thấy mũ / găng; trạng thái chủ yếu được suy ra từ khung xương và màu da
+        ở đầu, cổ tay. Hạ ngưỡng tin cậy không làm việc này tốt lên.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Mask người cho găng tay</h2>
+      <div class="row" style="gap:22px; align-items:flex-end">
+        <label class="check" title="Chỉ đo màu da trên điểm ảnh thuộc người đó, không đo ghế / bàn phía sau tay">
+          <input type="checkbox" id="personMask" /> Chỉ đo điểm ảnh của người (YOLO seg)</label>
+        <label class="field" id="maskImgszWrap">imgsz mask
+          <select id="maskImgsz"><option>320</option><option>480</option><option>640</option></select>
+        </label>
+      </div>
+      <p class="muted small" id="maskInfo" style="margin:8px 0 0"></p>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <h2 class="grow" style="margin:0">Camera có task PPE</h2>
+      </div>
+      <p class="muted small">Bật / tắt task PPE trên vùng đã vẽ. Camera chưa có vùng polygon cần vẽ vùng trước.</p>
+      <div class="list" id="camRows" style="margin-top:10px"></div>
+    </section>
+  </main>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/ppe.js"></script>
+</body>
+</html>

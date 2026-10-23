@@ -9,7 +9,6 @@ import cv2
 import numpy as np
 
 from .person import Person
-from .world import WorldObject
 
 SKELETON = [
     (5, 7), (7, 9), (6, 8), (8, 10), (5, 6), (5, 11), (6, 12), (11, 12),
@@ -17,7 +16,6 @@ SKELETON = [
 ]
 SIDE_COLORS = {"in": (80, 200, 60), "out": (0, 140, 255), "unknown": (200, 200, 200)}
 LINE_COLOR = (255, 0, 200)
-OBJ_COLOR = (255, 200, 0)
 PPE_OK_COLOR = (60, 200, 120)
 ALERT_COLOR = (40, 40, 255)
 FONT = cv2.FONT_HERSHEY_SIMPLEX
@@ -74,7 +72,6 @@ def render(
     frame: np.ndarray,
     *,
     persons: list[Person],
-    objects: list[WorldObject],
     line_px,
     inward_px,
     hud: list[str],
@@ -93,15 +90,6 @@ def render(
     if line_px is not None:
         draw_line(img, line_px, inward_px, scale)
 
-    for obj in objects:
-        x1, y1, x2, y2 = (int(v) for v in obj.box)
-        oc = ALERT_COLOR if obj.alert else OBJ_COLOR
-        cv2.rectangle(img, (x1, y1), (x2, y2), oc, thick + (1 if obj.alert else 0))
-        tag = f"{obj.label} {obj.conf:.2f}"
-        if obj.clip is not None:
-            tag += f"|{obj.clip:.2f}"
-        _label(img, tag, (x1, y1), oc, 0.45 * scale)
-
     for finding in ppe or []:
         x1, y1, x2, y2 = (int(v) for v in finding.box)
         pc = ALERT_COLOR if finding.alert else PPE_OK_COLOR
@@ -109,7 +97,7 @@ def render(
         _label(img, f"{finding.label} {finding.conf:.2f}", (x1, y1), pc, 0.45 * scale)
 
     for p in persons:
-        color = ALERT_COLOR if (p.alert or p.ppe_alert) else SIDE_COLORS.get(p.side, SIDE_COLORS["unknown"])
+        color = ALERT_COLOR if p.ppe_alert else SIDE_COLORS.get(p.side, SIDE_COLORS["unknown"])
         x1, y1, x2, y2 = (int(v) for v in p.box)
         if show_boxes:
             cv2.rectangle(img, (x1, y1), (x2, y2), color, thick + 1)
@@ -126,14 +114,9 @@ def render(
         tag = f"#{p.track_id}" if p.track_id is not None else "person"
         if p.side != "unknown":
             tag += f" {p.side.upper()}"
-        if p.alert:
-            tag += " ALERT"
         if p.ppe_alert:
             tag += " PPE"
         _label(img, tag, (x1, y1), color, 0.55 * scale, max(1, int(scale)))
-        if p.items:
-            ic = ALERT_COLOR if p.alert else OBJ_COLOR
-            _label(img, ", ".join(sorted(set(p.items)))[:60], (x1, y2 + int(22 * scale)), ic, 0.45 * scale)
 
     y = int(28 * scale)
     for line in hud:
@@ -142,25 +125,3 @@ def render(
         y += int(28 * scale)
     return img
 
-
-def attach_objects(persons: list[Person], objects: list[WorldObject], margin: float = 0.15) -> None:
-    """Assign each object to the smallest (expanded) person box containing the object's center."""
-    for p in persons:
-        p.items = []
-        p.alert = False
-    for obj in objects:
-        cx = (obj.box[0] + obj.box[2]) / 2.0
-        cy = (obj.box[1] + obj.box[3]) / 2.0
-        best: Person | None = None
-        best_area = float("inf")
-        for p in persons:
-            x1, y1, x2, y2 = p.box
-            mw, mh = (x2 - x1) * margin, (y2 - y1) * margin
-            if x1 - mw <= cx <= x2 + mw and y1 - mh <= cy <= y2 + mh:
-                area = (x2 - x1) * (y2 - y1)
-                if area < best_area:
-                    best, best_area = p, area
-        if best is not None:
-            obj.owner = best.track_id
-            best.items.append(obj.label)
-            best.alert = best.alert or obj.alert

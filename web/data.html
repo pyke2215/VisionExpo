@@ -46,7 +46,7 @@
         <div class="cards" id="rangeCards" style="margin-top:10px"></div>
       </div>
       <div class="panel">
-        <h2>Đồ vật xuất hiện nhiều nhất <span class="muted small">(số lượt người mang)</span></h2>
+        <h2>PPE theo lượt người <span class="muted small">(số lượt người có nhãn đó trong vùng PPE)</span></h2>
         <div class="chips" id="topItems"></div>
       </div>
     </section>
@@ -59,13 +59,13 @@
 
       <div id="tabTracks">
         <div class="row" style="margin-bottom:8px">
-          <label class="check"><input type="checkbox" id="tAlert" /> Chỉ người có cảnh báo</label>
-          <label class="field" style="flex-direction:row; align-items:center; gap:6px">Mang theo
+          <label class="check"><input type="checkbox" id="tAlert" /> Chỉ người thiếu PPE</label>
+          <label class="field" style="flex-direction:row; align-items:center; gap:6px">Nhãn PPE
             <select id="tItem"><option value="">bất kỳ</option></select>
           </label>
         </div>
         <table>
-          <thead><tr><th>Bắt đầu</th><th>Camera</th><th>#</th><th>Thời gian</th><th>Chiều</th><th>Mang theo</th></tr></thead>
+          <thead><tr><th>Bắt đầu</th><th>Camera</th><th>#</th><th>Thời gian</th><th>Chiều</th><th>PPE</th></tr></thead>
           <tbody id="trackRows"></tbody>
         </table>
         <div class="pager"><span class="muted small" id="trackInfo"></span><button id="tPrev">‹</button><button id="tNext">›</button></div>

@@ -2,9 +2,10 @@
 
 Event dicts always carry "type", "ts" and "camera_id". Types:
     crossing  track_id, direction ("in" | "out")
-    alert     track_id, items (alert labels), all_items
+    ppe_alert track_id, items (NO-* labels), all_items (every PPE label on the person)
     camera    status ("online" | "offline" | "error" | "reconnecting")
-    track     track_id, first_ts, last_ts, duration, frames, items {label: frames}, alert, first_side, last_side
+    track     track_id, first_ts, last_ts, duration, frames, items {PPE label: frames}, alert (had a NO-*),
+              first_side, last_side
     reset     counters reset for that camera
 Subscribers are called from worker threads and must not block.
 """

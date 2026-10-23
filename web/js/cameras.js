@@ -113,7 +113,7 @@ $("btnRefresh").onclick = load;
 // ---------- edit dialog ----------
 const form = $("editForm");
 const NUM_FIELDS = ["conf", "process_fps", "stream_width", "jpeg_quality", "imgsz"];
-const BOOL_FIELDS = ["enabled", "detect_enabled", "show_boxes", "show_skeleton", "world_enabled"];
+const BOOL_FIELDS = ["enabled", "detect_enabled", "show_boxes", "show_skeleton"];
 
 const F = (name) => form.elements.namedItem(name);
 

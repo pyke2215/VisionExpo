@@ -3,7 +3,7 @@
 Connect:  ws://HOST:PORT/ws?topics=status,events&cameras=camera_1&token=XXX
 Topics:   status  periodic totals + per-camera counters        (websocket.status_hz)
           people  periodic people per camera, normalized boxes  (websocket.people_hz)
-          events  crossing / alert / camera / reset, immediately
+          events  crossing / ppe_alert / camera / reset, immediately
           tracks  one summary per person after they leave the frame
 Client -> server JSON actions:
           {"action": "subscribe", "topics": [...]}     {"action": "unsubscribe", "topics": [...]}
@@ -23,7 +23,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from . import __version__
 
 TOPICS = ("status", "people", "events", "tracks")
-EVENT_TOPIC = {"crossing": "events", "alert": "events", "camera": "events", "reset": "events", "track": "tracks"}
+EVENT_TOPIC = {"crossing": "events", "ppe_alert": "events", "camera": "events", "reset": "events", "track": "tracks"}
 SEND_TIMEOUT_S = 2.0
 MAX_PENDING_EVENTS = 5000
 
@@ -136,12 +136,12 @@ class WsHub:
                 "mode": cr.get("mode"),
                 "entries": cr.get("entries", 0),
                 "exits": cr.get("exits", 0),
-                "alerts": c.get("alerts", 0),
-                "objects": c.get("objects", {}),
                 "ppe": c.get("ppe", {}),
                 "ppe_alerts": c.get("ppe_alerts", 0),
             })
-        return {"type": "status", "ts": time.time(), "totals": s["totals"], "cameras": cams}
+        ppe = s.get("ppe") or {}
+        required = ppe.get("required", []) if ppe.get("enabled") else []
+        return {"type": "status", "ts": time.time(), "totals": s["totals"], "ppe_required": required, "cameras": cams}
 
     def _people_payload(self) -> dict:
         cams = []
