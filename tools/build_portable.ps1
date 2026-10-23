@@ -3,15 +3,17 @@ Build a self-contained copy of the app in dist\VisionExpo (embedded Python + all
 The target PC only needs: Windows 10/11 x64 and, for GPU, an NVIDIA driver supporting CUDA 12.6.
 
 Usage (from Exhibition folder):
-  powershell -NoProfile -ExecutionPolicy Bypass -File tools\build_portable.ps1 [-Zip] [-Clean] [-Cpu]
+  powershell -NoProfile -ExecutionPolicy Bypass -File tools\build_portable.ps1 [-Zip] [-Clean] [-Cpu] [-NoShow]
   -Zip    also create dist\VisionExpo.zip
   -Clean  rebuild the embedded Python from scratch (otherwise only app/web/models/config are refreshed)
   -Cpu    install CPU-only PyTorch (smaller package, no GPU)
+  -NoShow leave the 3D show dashboard (/show/, start_show.bat) out of the package
 #>
 param(
     [switch]$Zip,
     [switch]$Clean,
     [switch]$Cpu,
+    [switch]$NoShow,
     [string]$PythonVersion = "3.11.9",
     [string]$TorchIndex = "https://download.pytorch.org/whl/cu126"
 )
@@ -88,17 +90,47 @@ if (-not (Test-Path $PyExe)) {
     Run $PyExe @("-m", "pip", "install", "--no-warn-script-location", "-q", "-r", (Join-Path $Root "requirements.txt"))
 }
 
+# ---------------------------------------------------------------- 3D show dashboard
+# Greco2026DashBoard (Vite) is built into show\ here; the package only carries that static build (served at
+# /show/ by the same server), never the source or node_modules, so the exhibition PC needs no Node.
+$ShowIndex = Join-Path $Root "show\index.html"
+if (-not $NoShow) {
+    $hasNpm = $null -ne (Get-Command npm -ErrorAction SilentlyContinue)
+    if ($hasNpm -and (Test-Path (Join-Path $Root "Greco2026DashBoard\package.json"))) {
+        Step "Build 3D show dashboard"
+        & cmd.exe /c "`"$(Join-Path $Root 'build_show.bat')`" nopause"
+        if ($LASTEXITCODE -ne 0) {
+            if (-not (Test-Path $ShowIndex)) { throw "build_show.bat failed and there is no previous show\ build" }
+            Write-Warning "build_show.bat failed; packaging the previous show\ build"
+        }
+    } elseif (Test-Path $ShowIndex) {
+        Write-Host "npm or Greco2026DashBoard not found: packaging the existing show\ build."
+    } else {
+        Write-Warning "No 3D show build (show\index.html) and no Node to build it: /show/ will be missing from the package."
+    }
+}
+
 # ---------------------------------------------------------------- app files
 Step "Copy app, web, models, config"
-foreach ($d in "app", "web", "tools", "models", "config", "docs") {
+$dirs = @("app", "web", "tools", "models", "config", "docs")
+if (-not $NoShow) { $dirs += "show" }
+foreach ($d in $dirs) {
     $src = Join-Path $Root $d
     $dst = Join-Path $Dist $d
     if (-not (Test-Path $src)) { continue }
     & robocopy $src $dst /MIR /NFL /NDL /NJH /NJS /NP /XD __pycache__ /XF *.tmp *.part | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "robocopy failed for $d ($LASTEXITCODE)" }
 }
-foreach ($f in "README.md", "requirements.txt", "start.bat", "start_kiosk.bat") {
-    Copy-Item (Join-Path $Root $f) $Dist -Force
+$files = @("README.md", "requirements.txt", "start.bat", "start_kiosk.bat")
+if (-not $NoShow) { $files += "start_show.bat" }
+foreach ($f in $files) {
+    $src = Join-Path $Root $f
+    if (Test-Path $src) { Copy-Item $src $Dist -Force }
+}
+if ($NoShow) {  # an earlier build may have left them
+    foreach ($p in (Join-Path $Dist "show"), (Join-Path $Dist "start_show.bat")) {
+        if (Test-Path $p) { Remove-Item -Recurse -Force $p }
+    }
 }
 
 $pose = Join-Path $Dist "models\yolo26n-pose.pt"
@@ -114,6 +146,7 @@ if (-not (Test-Path $pose) -or -not (Test-Path $seg)) {
 Step "Smoke test"
 Push-Location $Dist
 Run $PyExe @("-c", "import torch, torchvision, cv2, ultralytics, fastapi, uvicorn, lap, websockets; import app.main; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), '| ultralytics', ultralytics.__version__)")
+Run $PyExe @("-c", "from app.paths import SHOW_DIRS; d = next((x for x in SHOW_DIRS if (x / 'index.html').is_file()), None); print('show:', d or 'none (/show/ off)')")
 Pop-Location
 Get-ChildItem -Path $Dist -Recurse -Directory -Filter __pycache__ | Where-Object { $_.FullName -notlike "*\python\*" } | Remove-Item -Recurse -Force
 

@@ -138,9 +138,10 @@ Trên máy đã làm xong cách A và có internet:
 build_portable.bat          :: tạo dist\VisionExpo\ (~5 GB) và dist\VisionExpo.zip (~3 GB)
 build_portable.bat -Clean   :: build lại Python nhúng từ đầu
 build_portable.bat -Cpu     :: gói nhẹ, chỉ CPU
+build_portable.bat -NoShow  :: không kèm màn hình 3D (/show/, start_show.bat)
 ```
 
-Giải nén `VisionExpo.zip` ở máy đích, chạy `start.bat` hoặc `start_kiosk.bat`. Máy đích chỉ cần driver NVIDIA (CUDA 12.6), không có GPU thì tự chạy CPU.
+Giải nén `VisionExpo.zip` ở máy đích, chạy `start.bat`, `start_kiosk.bat` hoặc `start_show.bat` (màn hình 3D toàn màn hình; chỉ chạy một file vì cả ba cùng mở server cổng 8000). Máy đích chỉ cần driver NVIDIA (CUDA 12.6), không có GPU thì tự chạy CPU.
 
 ---
 

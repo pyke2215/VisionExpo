@@ -214,7 +214,7 @@ Khóa camera làm tương tự với `CAMERA_DEFAULTS`, form trong `cameras.html
 
 | Script | Kết quả |
 |---|---|
-| `build_portable.bat` → `tools/build_portable.ps1` | `dist\VisionExpo\`: Python 3.11 nhúng, torch CUDA, thư viện, `app/ web/ models/ config/ tools/`, `start.bat`; và `dist\VisionExpo.zip`. Lần sau chỉ đồng bộ code/model/config và `pip install -r requirements.txt` |
+| `build_portable.bat` → `tools/build_portable.ps1` | `dist\VisionExpo\`: Python 3.11 nhúng, torch CUDA, thư viện, `app/ web/ models/ config/ tools/`, `start.bat`, màn hình 3D đã build `show/` + `start_show.bat` (máy build có Node thì gọi `build_show.bat` trước; `-NoShow` để bỏ); và `dist\VisionExpo.zip`. Lần sau chỉ đồng bộ code/model/config và `pip install -r requirements.txt` |
 | `docker compose up -d --build` | Image `vision-expo:latest` (Dockerfile tự tải model người + mask nếu `models/` trống) |
 | `docker_export.bat` → `tools/docker_export.ps1` | `dist\VisionExpo-docker\`: image `.tar`, compose chỉ chạy, `config/`, `data/`, `install/start/stop/logs.bat` |
 

@@ -27,12 +27,12 @@ Chạy trên chính máy mang đi triển lãm (môi trường Python không cop
 
 Trên máy dev (có internet), chạy `build_portable.bat`. Script tạo:
 
-- `dist\VisionExpo\`: Python nhúng 3.11 + torch CUDA + toàn bộ thư viện + `app/`, `web/`, `models/`, `config/` (khoảng 5 GB);
+- `dist\VisionExpo\`: Python nhúng 3.11 + torch CUDA + toàn bộ thư viện + `app/`, `web/`, `models/`, `config/`, màn hình 3D `show/` + `start_show.bat` (khoảng 5 GB). Máy build có Node thì `build_show.bat` được chạy trước để `show/` khớp source `Greco2026DashBoard`; máy đích không cần Node;
 - `dist\VisionExpo.zip` (khoảng 3 GB).
 
 Máy đích chỉ cần Windows 10/11 64-bit và driver NVIDIA hỗ trợ CUDA 12.6 (không cần cài Python, không cần internet). Giải nén ở đâu cũng được, chạy `start.bat` hoặc `start_kiosk.bat`. Không có GPU thì app tự chuyển sang CPU.
 
-Tham số: `build_portable.bat -Clean` (build lại Python từ đầu), `-Cpu` (gói nhẹ hơn, chỉ CPU). Lần build sau chỉ cập nhật code/model/config, chạy nhanh. Gói chứa `config/settings.json` có mật khẩu RTSP.
+Tham số: `build_portable.bat -Clean` (build lại Python từ đầu), `-Cpu` (gói nhẹ hơn, chỉ CPU), `-NoShow` (không kèm màn hình 3D). Lần build sau chỉ cập nhật code/model/config, chạy nhanh. Gói chứa `config/settings.json` có mật khẩu RTSP.
 
 ## Đóng gói bằng Docker
 
