@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 
 from .person import Person
+from .zones import ZONE_COLORS as ZONE_COLORS_HEX
 
 SKELETON = [
     (5, 7), (7, 9), (6, 8), (8, 10), (5, 6), (5, 11), (6, 12), (11, 12),
@@ -55,17 +56,20 @@ def draw_line(img: np.ndarray, line_px, inward_px: tuple[float, float] | None, s
     _label(img, "IN", (tip[0] + 4, tip[1] + 4), SIDE_COLORS["in"], 0.6 * scale, max(1, int(scale)))
 
 
-def draw_zone(img: np.ndarray, zone_px, scale: float) -> None:
+# BGR per zone kind, from the shared "#rrggbb" palette in zones.py
+ZONE_COLORS = {k: (int(v[5:7], 16), int(v[3:5], 16), int(v[1:3], 16)) for k, v in ZONE_COLORS_HEX.items()}
+
+
+def draw_zone(img: np.ndarray, zone_px, scale: float, kind: str = "booth", label: str = "ZONE") -> None:
+    """Polygon edges, vertices and a name tag; no fill, so the picture inside keeps its true colours."""
     pts = np.array([[int(x), int(y)] for x, y in zone_px], dtype=np.int32)
-    overlay = img.copy()
-    cv2.fillPoly(overlay, [pts], SIDE_COLORS["in"])
-    cv2.addWeighted(overlay, 0.18, img, 0.82, 0, dst=img)
+    color = ZONE_COLORS.get(kind, ZONE_COLORS["other"])
     t = max(2, int(3 * scale))
-    cv2.polylines(img, [pts], True, LINE_COLOR, t, cv2.LINE_AA)
+    cv2.polylines(img, [pts], True, color, t, cv2.LINE_AA)
     for x, y in pts:
-        cv2.circle(img, (int(x), int(y)), t + 2, LINE_COLOR, -1)
+        cv2.circle(img, (int(x), int(y)), t + 2, color, -1)
     top = min(pts, key=lambda p: (p[1], p[0]))
-    _label(img, "ZONE", (int(top[0]) + 6, int(top[1]) - 6), SIDE_COLORS["in"], 0.6 * scale, max(1, int(scale)))
+    _label(img, ascii_text(label), (int(top[0]) + 6, int(top[1]) - 6), color, 0.6 * scale, max(1, int(scale)))
 
 
 def render(
@@ -77,7 +81,7 @@ def render(
     hud: list[str],
     show_skeleton: bool,
     show_boxes: bool,
-    zone_px=None,
+    zones=None,
     ppe=None,
 ) -> np.ndarray:
     img = frame.copy()
@@ -85,8 +89,8 @@ def render(
     scale = max(0.6, min(2.0, w / 1280.0))
     thick = max(1, int(2 * scale))
 
-    if zone_px is not None:
-        draw_zone(img, zone_px, scale)
+    for kind, label, pts in zones or []:  # (kind, label, polygon px)
+        draw_zone(img, pts, scale, kind, label)
     if line_px is not None:
         draw_line(img, line_px, inward_px, scale)
 

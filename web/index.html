@@ -12,7 +12,8 @@
       <div class="kpi"><div class="v" id="kPersons">0</div><div class="l">Đang thấy</div></div>
       <div class="kpi in"><div class="v" id="kInside">0</div><div class="l">Trong vùng</div></div>
       <div class="kpi out"><div class="v" id="kOutside">0</div><div class="l">Ngoài vùng</div></div>
-                  <div class="kpi alert" id="kPpeBox"><div class="v" id="kPpe">0</div><div class="l">Thiếu PPE</div></div>
+      <div class="kpi"><div class="v" id="kVisitors">0</div><div class="l">Khách hôm nay</div></div>
+      <div class="kpi alert" id="kPpeBox"><div class="v" id="kPpe">0</div><div class="l">Thiếu PPE</div></div>
     </section>
 
     <section class="live-layout">
@@ -31,12 +32,17 @@
           <button id="btnAuto">Tự chuyển</button>
           <button id="btnKiosk">Kiosk</button>
           <button id="btnFull">Toàn màn hình</button>
+          <button id="btnHeat" title="Phủ heatmap vị trí đứng hôm nay lên video">Heatmap</button>
           <button id="btnReset" class="danger">Reset đếm</button>
         </div>
         <div class="stage" id="stage"><div class="empty">Chưa có camera. Vào trang Cameras để thêm.</div></div>
       </div>
 
       <div class="side-panels">
+        <div class="panel" id="zonePanel">
+          <h3>Theo vùng</h3>
+          <div class="list" id="zoneList"></div>
+        </div>
         <div class="panel">
           <h3>Người trong khung</h3>
           <div class="list" id="peopleList"></div>

@@ -86,7 +86,7 @@ Kết nối `ws://<ip-máy>:8000/ws?topics=status,events&cameras=camera_1&token=
 |---|---|---|
 | `status` | `status` | Định kỳ (`status_hz`, mặc định 2 lần/giây): số người đang thấy (`persons`), đang trong / ngoài vùng (`inside` / `outside`), tổng lượt vào/ra, số nhãn PPE (`ppe`) và số người thiếu PPE (`ppe_alerts`); tổng và từng camera |
 | `people` | `people` | Định kỳ (`people_hz`): từng người với `track_id`, khung và điểm chân (tọa độ chuẩn hóa 0–1), phía trong/ngoài, `ppe_zone`, `ppe_alert` và `ppe` (từng nhãn: `label`, `kind`, `conf`, `alert`, `inferred`, `box`) |
-| `events` | `crossing`, `ppe_alert`, `camera`, `reset` | Ngay khi xảy ra: vào/ra (`direction` = `in`/`out`, `mode` = `line`/`zone`; ra khỏi vùng kèm `dwell_s`), thiếu PPE trong vùng (`NO-Hardhat` / `NO-Gloves` khi task `ppe`), camera đổi trạng thái, reset bộ đếm |
+| `events` | `crossing`, `crowd`, `ppe_alert`, `camera`, `reset` | Ngay khi xảy ra: vào/ra (`direction` = `in`/`out`, `mode` = `line`/`zone`; ra khỏi vùng kèm `dwell_s`), thiếu PPE trong vùng (`NO-Hardhat` / `NO-Gloves` khi task `ppe`), camera đổi trạng thái, reset bộ đếm |
 | `tracks` | `track` | Khi một người rời khung (3 giây không thấy): thời gian xuất hiện, phía đầu/cuối, nhãn PPE đã thấy, có từng thiếu PPE |
 
 Sau khi kết nối, server gửi `hello` rồi một `status`. Client gửi JSON `{"action": ...}`: `ping`, `subscribe` / `unsubscribe` (`topics`), `set_cameras` (`cameras`), `get_status`.
@@ -120,7 +120,8 @@ Mỗi camera chạy một luồng riêng: đọc RTSP liên tục và chỉ gi�
 | `cameras[].source` | RTSP URL, số webcam (`0`), hoặc đường dẫn file video (tự lặp) |
 | `cameras[].conf`, `imgsz`, `process_fps` | Ngưỡng phát hiện người, kích thước suy luận, FPS xử lý tối đa |
 | `cameras[].stream_width`, `jpeg_quality` | Độ phân giải / chất lượng luồng xem |
-| `cameras[].crossing` | `mode` (`line` / `zone`); `tasks` (`count`, `ppe` — PPE chỉ vùng); line: `points` + `inward_point`; vùng: `zone` (3–32 điểm), `zone_rule` (`body` = ≥ `zone_overlap` (mặc định 0.5) của 40% dưới khung người nằm trong vùng, mặc định; `box` = như trên nhưng cả khung người; `foot` = điểm chân trong vùng). Đổi chế độ không mất hình của chế độ kia |
+| `cameras[].crossing` | `mode` (`line` / `zone`); line: `points` + `inward_point` + `tasks` (`count`); vùng: `zones` – tối đa 12 vùng, mỗi vùng `{id, kind, name, points (3–32), tasks (count / ppe / rỗng), rule, overlap, crowd_max, crowd_s}`. `kind`: `booth` (vùng lớn nhất, người trong đó mới gửi sang màn hình 3D), `game_3d`, `monitoring`, `reception`, `other`. `rule`: `body` = ≥ `overlap` (0.5) của 40% dưới khung người nằm trong vùng (mặc định), `box` = cả khung người, `foot` = điểm chân. `crowd_max` > 0: sự kiện `crowd` khi hơn N người liên tục `crowd_s` giây. File cũ có một `zone` được tự chuyển thành vùng booth. Đổi chế độ không mất hình của chế độ kia |
+| `stats.visitor_min_s`, `stats.heat_grid` | Khách = người ở trong booth (hoặc vùng được xét) ≥ N giây (mặc định 10; sửa ở trang Dữ liệu); lưới heatmap vị trí đứng (mặc định 64×36 ô) |
 | `websocket.enabled`, `status_hz`, `people_hz`, `default_topics`, `token` | WebSocket `/ws` |
 | `database.enabled`, `sample_every_s`, `retention_days`, `save_tracks`, `restore_counts` | Database |
 

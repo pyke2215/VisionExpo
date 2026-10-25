@@ -19,11 +19,12 @@ Nhận diện đồ vật (YOLOE open-vocabulary + lọc CLIP: `world.py`, `clip
 | `worker` | `app/worker.py` | 1 / camera, thread | Pipeline từng khung, sự kiện, JPEG | `CameraWorker._process()`, `_assign_ppe()`, `_update_tracks()` |
 | `reader` | `app/capture.py` | 1 / camera, thread | Đọc RTSP / webcam / file, giữ khung mới nhất | `FrameReader.latest()`, `grab_single_frame()` |
 | `person` | `app/person.py` | 1 / camera | YOLO pose + ByteTrack | `PersonTracker.track()`, `Person` (dataclass), `foot_point()` |
-| `crossing` | `app/crossing.py` | 1 / camera | Line / zone, `p.side`, lượt vào/ra, task `count`/`ppe` | `CrossingCounter.update()`, `.ppe_active`, `.zone_px()` |
+| `crossing` | `app/crossing.py` | 1 / camera | Line, hoặc danh sách `ZoneTracker`; `p.side` theo vùng chính (booth), `p.zones` | `CrossingCounter.update()`, `.zones`, `.ppe_zones`, `.dashboard_zones`, `.primary`, `count_state()/restore_counts()` |
+| `zones` | `app/zones.py` | 1 / vùng / camera | Vùng có loại: thành viên (body/box/foot), vào/ra, thời gian ở lại, đông người; cấu hình + chuyển đổi; bảng màu | `ZoneTracker.update()`, `.stats()`, `normalize_zones()`, `migrate_single_zone()`, `ZONE_KINDS`, `ZONE_COLORS`, `DASHBOARD_KIND`, `settled()` |
 | `ppe` | `app/ppe.py` | dùng chung | Model PPE Hardhat / Gloves / NO-*, mask người, đọc pixel đầu / tay | `PpeService.detect_people()`, `.detect()`, `.person_masks()`, `PpeFinding`, `PpeEvidence`, `cover_state()`, `hand_state()` |
 | `draw` | `app/draw.py` | thư viện | Vẽ overlay (người, vùng / line, PPE, HUD) | `render()`, `ascii_text()` |
 | `hub` | `app/events.py` | singleton | Pub/sub đồng bộ trong tiến trình | `EventHub.publish()` |
-| `db` | `app/db.py` | singleton, thread `db-writer` | SQLite WAL: `events`, `tracks`, `samples` | `Database.on_event()`, `counts_since_reset()` |
+| `db` | `app/db.py` | singleton, thread `db-writer` | SQLite WAL: `events`, `tracks` (+`zones`, `visitor`), `samples`, `zone_samples`, `heat` | `Database.on_event()`, `counts_since_reset()` (theo vùng), `zone_summary()`, `visitors_hourly()`, `heatmap()`, `MIGRATIONS` |
 | `ws` | `app/ws.py` | singleton, asyncio | Server `/ws`, topic, tần suất, token | `WsHub`, `TOPICS`, `EVENT_TOPIC` |
 | `paths` | `app/paths.py` | hằng số | Đường dẫn, tên model mặc định | `resolve_model()`, `PPE_MODEL_DEFAULT`, `MASK_MODEL_DEFAULT`, `SHOW_DIRS` |
 | `web/*` | `web/*.html`, `web/js/*.js` | frontend vận hành | JS thuần, không build | `common.js: api(), toast(), renderNav(), fmt*()` |
@@ -151,9 +152,10 @@ Mặc định chỉ ở `settings_store.GLOBAL_DEFAULTS` / `CAMERA_DEFAULTS`; fi
 
 | `type` | Sinh ở | Trường thêm | Topic WS | DB |
 |---|---|---|---|---|
-| `crossing` | `crossing.update` → `worker._process` | `track_id, direction, mode, dwell_s?` | `events` | `events` (dùng cho `counts_since_reset`) |
+| `crossing` | `ZoneTracker._count` / line → `worker._process` | `track_id, direction, mode, dwell_s?, zone_id/kind/name` | `events` | `events` (dùng cho `counts_since_reset` theo vùng) |
+| `crowd` | `ZoneTracker._crowd` (> `crowd_max` liên tục `crowd_s`; hết sau 5 s ≤ giới hạn) | `state` start/end, `inside, max, peak?, duration_s?, zone_*` | `events` | `events` |
 | `ppe_alert` | `worker._emit_ppe_alerts` (8s / người / tổ hợp) | `items` (NO-*), `all_items` | `events` (mặc định) | `events` |
-| `track` | `worker._finish_track` (mất dấu > 3s, ≥ 5 khung) | `first_ts, last_ts, duration, items` (nhãn PPE → số khung), `alert` (từng có NO-*), `first_side, last_side` | `tracks` | bảng `tracks` |
+| `track` | `worker._finish_track` (mất dấu > 3s, ≥ 5 khung) | `first_ts, last_ts, duration, items` (nhãn PPE → số khung), `alert` (từng có NO-*), `first_side, last_side`, `zones` ({id: kind, name, seconds}), `visitor` (booth ≥ `stats.visitor_min_s`) | `tracks` | bảng `tracks` |
 | `camera` | `worker._check_state` | `status, error` | `events` | `events` |
 | `reset` | `worker.reset_counts` | — | `events` | `events` (mốc khôi phục đếm) |
 
@@ -167,7 +169,7 @@ Luồng: `worker._emit` → `EventHub.publish` (đồng bộ, trên thread worke
 |---|---|---|
 | `/` Live | `live.js` | `/api/status` (1s), `stream.mjpg` / `frame.jpg`, `/api/crossing/reset_all` |
 | `/cameras` | `cameras.js` | `/api/cameras` CRUD, `/api/cameras/test`, `/restart`, `/api/status` |
-| `/calibrate` | `calibrate.js` | `/api/cameras/{id}`, `snapshot.jpg`, `PUT /crossing` (mode, points, zone, tasks, zone_rule, zone_overlap), `/crossing/reset` |
+| `/calibrate` | `calibrate.js` | `/api/zones/meta`, `/api/cameras/{id}`, `snapshot.jpg`, `PUT /crossing` (mode, points, inward_point, tasks, `zones[]`), `/crossing/reset` |
 | `/ppe` | `ppe.js` | `GET/PUT /api/ppe` (tự lưu, debounce), `/api/cameras`, `PUT /api/cameras/{id}/crossing` (bật/tắt task `ppe`) |
 | `/data` | `data.js` | `/api/db*`, export CSV, `/api/db/clear` |
 | `/socket` | `socket.js` | `/api/ws`, `WebSocket /ws` |
@@ -185,6 +187,8 @@ Luồng: `worker._emit` → `EventHub.publish` (đồng bộ, trên thread worke
 PPE hiển thị trên Live (KPI "Thiếu PPE", panel "PPE trong vùng" khi camera đang xem có task ppe, tag "Thiếu mũ / găng" ở danh sách người). Cấu hình PPE ở trang `/ppe`; task `ppe` của từng camera bật ở `/ppe` hoặc `/calibrate`.
 
 ---
+
+**Vùng:** `cameras[].crossing.zones[]` (`zones.py`). `in_zone` (WS `inside=1`, màn hình 3D) = đang ở vùng loại `booth`. PPE chỉ chạy cho người trong vùng có task `ppe` (`crossing.ppe_zones`, + tâm thân, giữ 2 s). Worker cộng dồn giây ở từng vùng cho track (khoảng hở khung > 1 s không tính), tích lũy heatmap (điểm chân, ≤ 1 lần/giây/track, track ≥ 5 khung) → `take_heat()` → DB mỗi 60 s vào hàng của giờ hiện tại; `manager.heatmap()` cộng thêm phần chưa ghi. `GET /api/heatmap`, `/api/db/zones`, `/api/db/visitors`, `/api/zones`, `/api/zones/meta`, `PUT /api/stats`.
 
 ## 8. Bất biến và bẫy
 
@@ -204,10 +208,11 @@ PPE hiển thị trên Live (KPI "Thiếu PPE", panel "PPE trong vùng" khi came
 
 ```python
 # cwd = Exhibition, python của .venv
-from app.worker import CameraWorker; from app.ppe import PpeService
+from app.worker import CameraWorker; from app.ppe import PpeService; from app.zones import normalize_zones
 ppe = PpeService({"mode": "crop", "every_n": 1})  # chờ ppe.status == "ready"
-cam = {"id": "t", "source": "x.mp4", "conf": 0.3, "imgsz": 640,
-       "crossing": {"mode": "zone", "zone": [{"x":0,"y":0.5},{"x":1,"y":0.5},{"x":1,"y":1},{"x":0,"y":1}], "tasks": ["ppe"]}}
+zones = normalize_zones([{"kind": "booth", "tasks": ["count", "ppe"],  # CameraWorker nhận zones đã chuẩn hóa
+                          "points": [{"x":0,"y":0.5},{"x":1,"y":0.5},{"x":1,"y":1},{"x":0,"y":1}]}])
+cam = {"id": "t", "source": "x.mp4", "conf": 0.3, "imgsz": 640, "crossing": {"mode": "zone", "zones": zones}}
 w = CameraWorker(cam, person_weights="models/yolo26n-pose.pt", device="0", ppe=ppe)
 for _ in range(3): w._process(img)          # img = cv2.imread(...)
 w.people_detail(); w.ppe_findings; w.latest_jpeg()

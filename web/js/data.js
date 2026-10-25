@@ -2,9 +2,10 @@ renderNav("data");
 
 const $ = (id) => document.getElementById(id);
 const PAGE = 50;
-const EVENT_TYPES = { crossing: "Vào / ra", ppe_alert: "Cảnh báo PPE", alert: "Cảnh báo vũ khí (cũ)", camera: "Camera", reset: "Reset đếm" };
+const EVENT_TYPES = { crossing: "Vào / ra", crowd: "Vùng đông người", ppe_alert: "Cảnh báo PPE", alert: "Cảnh báo vũ khí (cũ)", camera: "Camera", reset: "Reset đếm" };
 const PPE_VI = { Hardhat: "Có mũ", "NO-Hardhat": "Thiếu mũ", Gloves: "Có găng", "NO-Gloves": "Thiếu găng" };
-const st = { labels: { vi: PPE_VI, alerts: new Set(["NO-Hardhat", "NO-Gloves"]) }, cams: {}, tab: "tracks", tPage: 0, ePage: 0 };
+const st = { labels: { vi: PPE_VI, alerts: new Set(["NO-Hardhat", "NO-Gloves"]) }, cams: {}, tab: "tracks", tPage: 0, ePage: 0, meta: { kinds: {}, colors: {}, stats: {} } };
+const zoneDot = (kind) => `<i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${st.meta.colors[kind] || "#ccc"}"></i>`;
 
 // ---------- filters ----------
 function toLocalInput(d) {
@@ -120,6 +121,72 @@ async function loadTopItems() {
   $("tItem").value = current;
 }
 
+// ---------- zones ----------
+async function loadZones() {
+  const rows = await api(withParams("/api/db/zones"));
+  const n = (v) => (v === null || v === undefined ? "–" : v);
+  $("zoneRows").innerHTML = rows.length
+    ? rows.map((z) => `<tr><td>${camName(z.camera_id)}</td>
+        <td>${zoneDot(z.kind)} <strong>${esc(z.name || z.zone_id)}</strong> <span class="muted small">${esc(st.meta.kinds[z.kind] || z.kind || "")}</span></td>
+        <td><strong>${z.visitors}</strong></td><td>${z.visits}</td>
+        <td>${z.dwell_avg_s != null ? fmtDuration(z.dwell_avg_s) : "–"}</td><td>${z.dwell_median_s != null ? fmtDuration(z.dwell_median_s) : "–"}</td>
+        <td>${z.entries} / ${z.exits}</td><td>${n(z.peak)}</td><td>${n(z.avg_inside)}</td>
+        <td>${z.crowds ? `<span class="tag alert">${z.crowds}</span>` : 0}</td></tr>`).join("")
+    : `<tr><td colspan="10" class="muted">Chưa có dữ liệu vùng trong khoảng này</td></tr>`;
+  const cur = $("vZone").value;
+  $("vZone").innerHTML = `<option value="">Booth (khách thật)</option>` +
+    rows.map((z) => `<option value="${esc(z.zone_id)}">${esc(z.name || z.zone_id)} · ${camName(z.camera_id)}</option>`).join("");
+  $("vZone").value = [...$("vZone").options].some((o) => o.value === cur) ? cur : "";
+}
+
+async function loadVisitors() {
+  const rows = await api(withParams("/api/db/visitors", { zone_id: $("vZone").value }));
+  const svg = $("vChart");
+  const W = 800, H = 220, PADL = 34, PADB = 22, PADT = 10;
+  if (!rows.length) {
+    svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" fill="#8b95a7" text-anchor="middle" font-size="14">Chưa có dữ liệu trong khoảng này</text>`;
+    return;
+  }
+  const max = Math.max(1, ...rows.map((r) => r.visits));
+  const slot = (W - PADL) / rows.length;
+  const bw = Math.max(2, Math.min(22, slot / 2.5));
+  const y = (v) => H - PADB - (v / max) * (H - PADB - PADT);
+  let html = "";
+  for (let i = 0; i <= 4; i++) {
+    const v = Math.round((max * i) / 4);
+    html += `<line x1="${PADL}" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="#2a3242" stroke-width="1"/>
+             <text x="${PADL - 6}" y="${y(v) + 4}" fill="#8b95a7" font-size="10" text-anchor="end">${v}</text>`;
+  }
+  rows.forEach((r, i) => {
+    const cx = PADL + slot * i + slot / 2;
+    html += `<rect x="${cx - bw}" y="${y(r.visits)}" width="${bw}" height="${H - PADB - y(r.visits)}" fill="#4b5568"><title>${r.visits} lượt ghé</title></rect>`;
+    html += `<rect x="${cx}" y="${y(r.visitors)}" width="${bw}" height="${H - PADB - y(r.visitors)}" fill="#3fa7ff"><title>${r.visitors} khách</title></rect>`;
+    const every = Math.ceil(rows.length / 16);
+    if (i % every === 0) {
+      const d = new Date(r.hour_ts * 1000);
+      const label = rows.length > 24 ? `${d.getDate()}/${d.getMonth() + 1} ${d.getHours()}h` : `${d.getHours()}h`;
+      html += `<text x="${cx}" y="${H - 6}" fill="#8b95a7" font-size="10" text-anchor="middle">${label}</text>`;
+    }
+  });
+  svg.innerHTML = html + `<text x="${W - 4}" y="${PADT + 10}" fill="#8b95a7" font-size="11" text-anchor="end">xám: lượt ghé · xanh: khách</text>`;
+}
+
+async function loadHeat() {
+  const cam = $("hCamera").value;
+  if (!cam) return;
+  const h = await api(withParams("/api/heatmap", { camera_id: cam }));
+  const img = $("hImg");
+  img.onerror = () => img.removeAttribute("src");
+  img.src = `/api/cameras/${encodeURIComponent(cam)}/snapshot.jpg?t=${Date.now()}`;
+  const cv = $("hCanvas");
+  const r = cv.getBoundingClientRect();
+  drawHeat(cv, h, Math.round(r.width) || 800, Math.round(r.height) || 450);
+  const total = h.grid ? h.grid.reduce((a, b) => a + b, 0) : 0;
+  $("hInfo").textContent = total
+    ? `Tổng ${fmtDuration(total)} người·giây; ô đậm nhất ${fmtDuration(h.max)}. Xanh → vàng → đỏ = ít → nhiều người đứng.`
+    : "Chưa có dữ liệu heatmap trong khoảng này (ghi mỗi phút).";
+}
+
 // ---------- tables ----------
 async function loadTracks() {
   const r = await api(withParams("/api/db/tracks", {
@@ -131,10 +198,11 @@ async function loadTracks() {
         <td>${fmtDateTime(t.first_ts)}</td><td>${camName(t.camera_id)}</td><td>${t.track_id ?? ""}</td>
         <td>${fmtDuration(t.duration)}</td>
         <td>${side(t.first_side)}${t.first_side !== t.last_side ? " → " + side(t.last_side) : ""}</td>
+        <td>${Object.values(t.zones || {}).map((z) => `<span class="tag unknown">${zoneDot(z.kind)} ${esc(z.name)} ${fmtDuration(z.seconds)}</span>`).join(" ") || '<span class="muted small">–</span>'}${t.visitor ? ' <span class="tag in">KHÁCH</span>' : ""}</td>
         <td class="items"><div class="chips">${Object.entries(t.items)
           .map(([k, v]) => `<span class="chip ${st.labels.alerts.has(k) ? "alert" : ""}" title="${v} khung">${itemLabel(k)}</span>`)
           .join("") || '<span class="muted small">–</span>'}${t.alert ? '<span class="tag alert">THIẾU PPE</span>' : ""}</div></td></tr>`).join("")
-    : `<tr><td colspan="6" class="muted">Không có dữ liệu</td></tr>`;
+    : `<tr><td colspan="7" class="muted">Không có dữ liệu</td></tr>`;
   $("trackInfo").textContent = `${r.total ? st.tPage * PAGE + 1 : 0}–${Math.min(r.total, (st.tPage + 1) * PAGE)} / ${r.total}`;
   $("tPrev").disabled = st.tPage === 0;
   $("tNext").disabled = (st.tPage + 1) * PAGE >= r.total;
@@ -143,7 +211,11 @@ async function loadTracks() {
 function eventDetail(e) {
   if (e.type === "crossing")
     return `<span class="tag ${e.direction}">${e.direction === "in" ? "VÀO" : "RA"}</span>` +
-      (e.data?.mode === "zone" ? ` <span class="muted small">vùng${e.data.dwell_s != null ? ` · ở ${fmtDuration(e.data.dwell_s)}` : ""}</span>` : "");
+      (e.data?.mode === "zone" ? ` <span class="muted small">${esc(e.data.zone_name || "vùng")}${e.data.dwell_s != null ? ` · ở ${fmtDuration(e.data.dwell_s)}` : ""}</span>` : "");
+  if (e.type === "crowd")
+    return e.data?.state === "start"
+      ? `<span class="tag alert">ĐÔNG</span> ${esc(e.data.zone_name || "")} <span class="muted small">${e.data.inside} người (giới hạn ${e.data.max})</span>`
+      : `<span class="tag in">HẾT ĐÔNG</span> ${esc(e.data?.zone_name || "")} <span class="muted small">đỉnh ${e.data?.peak ?? "?"} người · ${fmtDuration(e.data?.duration_s)}</span>`;
   if (e.type === "alert" || e.type === "ppe_alert")
     return `<span class="tag alert">${esc((e.data?.items || []).join(", "))}</span> <span class="muted small">${esc((e.data?.all_items || []).join(", "))}</span>`;
   if (e.type === "camera") return `${esc(e.data?.status || "")} <span class="muted small">${esc(e.data?.error || "")}</span>`;
@@ -179,7 +251,7 @@ async function applyAll() {
   st.ePage = 0;
   updateCsvLinks();
   try {
-    await Promise.all([loadSummary(), loadHourly(), loadTopItems(), loadTracks(), loadEvents()]);
+    await Promise.all([loadSummary(), loadHourly(), loadTopItems(), loadTracks(), loadEvents(), loadZones().then(loadVisitors), loadHeat()]);
   } catch (e) {
     toast(e.message, true);
   }
@@ -193,6 +265,16 @@ $("btnToday").onclick = () => { const d = new Date(); d.setHours(0, 0, 0, 0); se
 $("btn24h").onclick = () => { setRange(new Date(Date.now() - 86400000), null); applyAll(); };
 $("btn7d").onclick = () => { const d = new Date(Date.now() - 6 * 86400000); d.setHours(0, 0, 0, 0); setRange(d, null); applyAll(); };
 $("tAlert").onchange = () => { st.tPage = 0; loadTracks(); };
+$("vZone").onchange = () => loadVisitors().catch((e) => toast(e.message, true));
+$("hCamera").onchange = () => loadHeat().catch((e) => toast(e.message, true));
+$("btnSaveVisitor").onclick = async () => {
+  try {
+    const s = await api("/api/stats", { method: "PUT", body: { visitor_min_s: Number($("visitorMin").value) } });
+    $("visitorMin").value = s.visitor_min_s;
+    toast(`Khách = ở trong vùng ≥ ${s.visitor_min_s} giây`);
+    applyAll();
+  } catch (e) { toast(e.message, true); }
+};
 $("tItem").onchange = () => { st.tPage = 0; loadTracks(); };
 $("tPrev").onclick = () => { st.tPage--; loadTracks(); };
 $("tNext").onclick = () => { st.tPage++; loadTracks(); };
@@ -233,9 +315,13 @@ $("btnClearDb").onclick = async () => {
     .map(([k, v]) => `<label class="check"><input type="checkbox" name="eType" value="${k}" ${k !== "camera" ? "checked" : ""}/> ${v}</label>`)
     .join("");
   document.querySelectorAll("input[name=eType]").forEach((el) => (el.onchange = () => { st.ePage = 0; loadEvents(); }));
+  try { st.meta = await api("/api/zones/meta"); } catch { /* defaults */ }
+  $("visitorMin").value = st.meta.stats?.visitor_min_s ?? 10;
   const cams = await api("/api/cameras");
   cams.forEach((c) => (st.cams[c.id] = c.name));
   $("fCamera").innerHTML += cams.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+  const enabled = cams.filter((c) => c.enabled);
+  $("hCamera").innerHTML = (enabled.length ? enabled : cams).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   setRange(today, null);

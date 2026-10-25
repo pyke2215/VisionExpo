@@ -61,13 +61,37 @@ CREATE TABLE IF NOT EXISTS samples (
     objects TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples(ts);
+
+CREATE TABLE IF NOT EXISTS zone_samples (
+    id INTEGER PRIMARY KEY,
+    ts REAL NOT NULL,
+    camera_id TEXT NOT NULL,
+    zone_id TEXT NOT NULL,
+    kind TEXT,
+    name TEXT,
+    inside INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_zone_samples_ts ON zone_samples(ts);
+
+CREATE TABLE IF NOT EXISTS heat (
+    hour_ts REAL NOT NULL,
+    camera_id TEXT NOT NULL,
+    cols INTEGER NOT NULL,
+    rows INTEGER NOT NULL,
+    grid TEXT NOT NULL,
+    PRIMARY KEY (hour_ts, camera_id)
+);
 """
+# Columns added after the first release: (table, column, type). Applied with ALTER TABLE on existing databases.
+MIGRATIONS = (("tracks", "zones", "TEXT"), ("tracks", "visitor", "INTEGER"))
 
 EVENT_COLUMNS = ("ts", "camera_id", "type", "track_id", "direction", "data")
 TRACK_COLUMNS = (
     "camera_id", "track_id", "first_ts", "last_ts", "duration", "frames", "items", "alert", "first_side", "last_side",
+    "zones", "visitor",
 )
 PURGE_EVERY_S = 3600.0
+HEAT_FLUSH_S = 60.0  # how often workers' heat grids are added to the current hour row
 
 
 def _local_offset_s() -> int:
@@ -80,10 +104,12 @@ class Database:
         path: Path,
         cfg_getter: Callable[[], dict],
         status_getter: Callable[[], dict] | None = None,
+        heat_getter: Callable[[], dict] | None = None,
     ) -> None:
         self.path = path
         self._cfg = cfg_getter
         self._status = status_getter
+        self._heat = heat_getter  # () -> {camera_id: grid taken from the worker (np.ndarray rows x cols)}
         self._q: queue.Queue = queue.Queue(maxsize=50000)
         self._stop = threading.Event()
         self.dropped = 0
@@ -92,6 +118,9 @@ class Database:
         path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            for table, col, typ in MIGRATIONS:
+                if col not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
         self._thread = threading.Thread(target=self._writer, name="db-writer", daemon=True)
 
     # ---------- lifecycle ----------
@@ -136,6 +165,7 @@ class Database:
         conn = self._connect()
         next_sample = time.time() + 5.0
         next_purge = time.time() + 60.0
+        next_heat = time.time() + HEAT_FLUSH_S
         while not self._stop.is_set() or not self._q.empty():
             batch: list[dict] = []
             try:
@@ -153,6 +183,9 @@ class Database:
                     next_sample = now + every
                     if self.enabled and self._status is not None:
                         self._sample(conn, now)
+                if now >= next_heat:  # the final flush on stop happens after the loop
+                    next_heat = now + HEAT_FLUSH_S
+                    self._flush_heat(conn, now)
                 if now >= next_purge:
                     next_purge = now + PURGE_EVERY_S
                     self._purge(conn, now)
@@ -161,6 +194,10 @@ class Database:
                 self.last_error = str(exc)
                 print(f"[db] {exc}")
                 time.sleep(1.0)
+        try:
+            self._flush_heat(conn, time.time())
+        except sqlite3.Error as exc:
+            print(f"[db] heat flush on stop: {exc}")
         conn.close()
 
     def _insert(self, conn: sqlite3.Connection, batch: list[dict]) -> None:
@@ -171,6 +208,8 @@ class Database:
                     ev["camera_id"], ev.get("track_id"), ev["first_ts"], ev["last_ts"], ev.get("duration"),
                     ev.get("frames"), json.dumps(ev.get("items") or {}, ensure_ascii=False),
                     1 if ev.get("alert") else 0, ev.get("first_side"), ev.get("last_side"),
+                    json.dumps(ev.get("zones") or {}, ensure_ascii=False),
+                    None if ev.get("visitor") is None else int(bool(ev.get("visitor"))),
                 ))
             else:
                 extra = {k: v for k, v in ev.items() if k not in ("ts", "camera_id", "type", "track_id", "direction")}
@@ -183,13 +222,14 @@ class Database:
                 conn.executemany(f"INSERT INTO events ({','.join(EVENT_COLUMNS)}) VALUES (?,?,?,?,?,?)", ev_rows)
             if tr_rows:
                 conn.executemany(
-                    f"INSERT INTO tracks ({','.join(TRACK_COLUMNS)}) VALUES (?,?,?,?,?,?,?,?,?,?)", tr_rows
+                    f"INSERT INTO tracks ({','.join(TRACK_COLUMNS)}) VALUES ({','.join('?' * len(TRACK_COLUMNS))})",
+                    tr_rows,
                 )
         self.written += len(batch)
 
     def _sample(self, conn: sqlite3.Connection, now: float) -> None:
         status = self._status()
-        rows = []
+        rows, zone_rows = [], []
         for cam in status.get("cameras") or []:
             if cam.get("status") != "running":
                 continue
@@ -198,11 +238,38 @@ class Database:
                 now, cam["id"], cam.get("persons", 0), cr.get("entries", 0), cr.get("exits", 0),
                 cam.get("ppe_alerts", 0), json.dumps(cam.get("ppe") or {}, ensure_ascii=False),
             ))
-        if rows:
-            with conn:
+            zone_rows += [(now, cam["id"], z["id"], z["kind"], z["name"], z["inside"]) for z in cr.get("zones") or []]
+        with conn:
+            if rows:
                 conn.executemany(
                     "INSERT INTO samples (ts, camera_id, persons, entries, exits, alerts, objects) VALUES (?,?,?,?,?,?,?)",
                     rows,
+                )
+            if zone_rows:
+                conn.executemany(
+                    "INSERT INTO zone_samples (ts, camera_id, zone_id, kind, name, inside) VALUES (?,?,?,?,?,?)",
+                    zone_rows,
+                )
+
+    def _flush_heat(self, conn: sqlite3.Connection, now: float) -> None:
+        """Add each worker's new heat grid to that camera's row for the current hour."""
+        if self._heat is None or not self.enabled:
+            return
+        hour = float(int(now // 3600) * 3600)
+        for cam_id, grid in (self._heat() or {}).items():
+            if grid is None:
+                continue
+            rows, cols = grid.shape
+            old = conn.execute(
+                "SELECT cols, rows, grid FROM heat WHERE hour_ts = ? AND camera_id = ?", (hour, cam_id)
+            ).fetchone()
+            values = [round(float(v), 1) for v in grid.ravel()]
+            if old is not None and old["cols"] == cols and old["rows"] == rows:
+                values = [round(a + b, 1) for a, b in zip(json.loads(old["grid"]), values)]
+            with conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO heat (hour_ts, camera_id, cols, rows, grid) VALUES (?,?,?,?,?)",
+                    (hour, cam_id, cols, rows, json.dumps(values)),
                 )
 
     def _purge(self, conn: sqlite3.Connection, now: float) -> None:
@@ -214,21 +281,32 @@ class Database:
             conn.execute("DELETE FROM events WHERE ts < ? AND type != 'reset'", (cutoff,))
             conn.execute("DELETE FROM tracks WHERE last_ts < ?", (cutoff,))
             conn.execute("DELETE FROM samples WHERE ts < ?", (cutoff,))
+            conn.execute("DELETE FROM zone_samples WHERE ts < ?", (cutoff,))
+            conn.execute("DELETE FROM heat WHERE hour_ts < ?", (cutoff,))
 
     # ---------- queries ----------
-    def counts_since_reset(self, camera_id: str) -> tuple[int, int]:
+    def counts_since_reset(self, camera_id: str) -> dict:
+        """{zone_id | "_line" | None: (entries, exits)} of crossing events since the last reset.
+
+        Line events have mode "line"; zone events carry data.zone_id. Zone events saved before zones had ids
+        come back under None (CrossingCounter gives them to the primary zone).
+        """
         with self._read() as conn:
             row = conn.execute(
                 "SELECT MAX(ts) FROM events WHERE camera_id = ? AND type = 'reset'", (camera_id,)
             ).fetchone()
             since = row[0] or 0.0
             rows = conn.execute(
-                "SELECT direction, COUNT(*) FROM events WHERE camera_id = ? AND type = 'crossing' AND ts > ? "
-                "GROUP BY direction",
+                "SELECT CASE WHEN json_extract(data, '$.mode') = 'line' THEN '_line' "
+                "ELSE json_extract(data, '$.zone_id') END AS zone, direction, COUNT(*) "
+                "FROM events WHERE camera_id = ? AND type = 'crossing' AND ts > ? GROUP BY zone, direction",
                 (camera_id, since),
             ).fetchall()
-        counts = {r[0]: r[1] for r in rows}
-        return int(counts.get("in", 0)), int(counts.get("out", 0))
+        out: dict = {}
+        for zone, direction, n in rows:
+            n_in, n_out = out.get(zone, (0, 0))
+            out[zone] = (n_in + n, n_out) if direction == "in" else (n_in, n_out + n)
+        return out
 
     def summary(self) -> dict:
         with self._read() as conn:
@@ -329,6 +407,109 @@ class Database:
                 buckets.setdefault(b, {"in": 0, "out": 0, "alerts": 0, "tracks": 0})["tracks"] += n
         return [{"hour_ts": b * 3600 - off, **v} for b, v in sorted(buckets.items())]
 
+    def _zone_tracks(self, camera_id, ts_from, ts_to) -> list[tuple[str, float, dict, bool | None]]:
+        """(camera_id, first_ts, zones dict, visitor) of the tracks in the range."""
+        clauses, params = [], []
+        self._where(clauses, params, ts_col="first_ts", camera_id=camera_id, ts_from=ts_from, ts_to=ts_to)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        out = []
+        with self._read() as conn:
+            for r in conn.execute(f"SELECT camera_id, first_ts, zones, visitor FROM tracks {where} LIMIT 200000", params):
+                try:
+                    zones = json.loads(r["zones"] or "{}")
+                except json.JSONDecodeError:
+                    zones = {}
+                out.append((r["camera_id"], r["first_ts"], zones, None if r["visitor"] is None else bool(r["visitor"])))
+        return out
+
+    def zone_summary(self, *, camera_id=None, ts_from=None, ts_to=None, visitor_min_s: float = 10) -> list[dict]:
+        """Per zone: visits, visitors (>= visitor_min_s inside), dwell avg / median of visitors, entries, peak, crowds."""
+        acc: dict[tuple, dict] = {}
+        for cam, _, zones, _visitor in self._zone_tracks(camera_id, ts_from, ts_to):
+            for zid, z in zones.items():
+                a = acc.setdefault((cam, zid), {"camera_id": cam, "zone_id": zid, "kind": z.get("kind"),
+                                                "name": z.get("name"), "visits": 0, "dwell": []})
+                a["kind"], a["name"] = z.get("kind") or a["kind"], z.get("name") or a["name"]
+                a["visits"] += 1
+                if float(z.get("seconds") or 0) >= visitor_min_s:
+                    a["dwell"].append(float(z["seconds"]))
+        clauses, params = [], []
+        self._where(clauses, params, ts_col="ts", camera_id=camera_id, ts_from=ts_from, ts_to=ts_to)
+        where = " AND ".join(clauses + ["1"])
+        with self._read() as conn:
+            for cam, zid, kind, name, peak, avg in conn.execute(
+                f"SELECT camera_id, zone_id, kind, name, MAX(inside), AVG(inside) FROM zone_samples WHERE {where} "
+                "GROUP BY camera_id, zone_id", params,
+            ):
+                a = acc.setdefault((cam, zid), {"camera_id": cam, "zone_id": zid, "kind": kind, "name": name,
+                                                "visits": 0, "dwell": []})
+                a["peak"], a["avg_inside"] = peak, round(avg or 0, 2)
+            for cam, zid, typ, direction, n in conn.execute(
+                "SELECT camera_id, json_extract(data, '$.zone_id') z, type, direction, COUNT(*) FROM events "
+                f"WHERE {where} AND type IN ('crossing', 'crowd') AND json_extract(data, '$.zone_id') IS NOT NULL "
+                "AND (type = 'crossing' OR json_extract(data, '$.state') = 'start') GROUP BY camera_id, z, type, direction",
+                params,
+            ):
+                a = acc.get((cam, zid))
+                if a is None:
+                    continue
+                key = "crowds" if typ == "crowd" else ("entries" if direction == "in" else "exits")
+                a[key] = a.get(key, 0) + n
+        out = []
+        for a in acc.values():
+            d = sorted(a.pop("dwell"))
+            out.append({
+                **a, "visitors": len(d),
+                "dwell_avg_s": round(sum(d) / len(d), 1) if d else None,
+                "dwell_median_s": round(d[len(d) // 2] if len(d) % 2 else (d[len(d) // 2 - 1] + d[len(d) // 2]) / 2, 1)
+                if d else None,
+                "entries": a.get("entries", 0), "exits": a.get("exits", 0), "crowds": a.get("crowds", 0),
+                "peak": a.get("peak"), "avg_inside": a.get("avg_inside"),
+            })
+        order = ["booth", "game_3d", "monitoring", "reception", "other"]
+        out.sort(key=lambda r: (r["camera_id"], order.index(r["kind"]) if r["kind"] in order else 99, r["name"] or ""))
+        return out
+
+    def visitors_hourly(self, *, camera_id=None, zone_id=None, ts_from=None, ts_to=None,
+                        visitor_min_s: float = 10) -> list[dict]:
+        """Visitors per local hour: tracks flagged visitor (booth), or >= visitor_min_s in zone_id when given."""
+        off = _local_offset_s()
+        buckets: dict[int, dict] = {}
+        for _, first_ts, zones, visitor in self._zone_tracks(camera_id, ts_from, ts_to):
+            b = int((first_ts + off) // 3600)
+            d = buckets.setdefault(b, {"visitors": 0, "visits": 0})
+            if zone_id:
+                z = zones.get(zone_id)
+                if not z:
+                    continue
+                d["visits"] += 1
+                d["visitors"] += float(z.get("seconds") or 0) >= visitor_min_s
+            else:
+                d["visits"] += bool(zones)
+                d["visitors"] += bool(visitor)
+        return [{"hour_ts": b * 3600 - off, **v} for b, v in sorted(buckets.items())]
+
+    def heatmap(self, *, camera_id: str, ts_from=None, ts_to=None) -> dict | None:
+        """Summed heat grid (seconds per cell) of the hours in range; None when nothing was recorded."""
+        clauses, params = ["camera_id = ?"], [camera_id]
+        if ts_from is not None:
+            clauses.append("hour_ts >= ?")
+            params.append(float(ts_from) // 3600 * 3600)
+        if ts_to is not None:
+            clauses.append("hour_ts < ?")
+            params.append(float(ts_to))
+        total = None
+        cols = rows = 0
+        with self._read() as conn:
+            for r in conn.execute(f"SELECT cols, rows, grid FROM heat WHERE {' AND '.join(clauses)}", params):
+                g = json.loads(r["grid"])
+                if total is None or (r["cols"], r["rows"]) != (cols, rows):
+                    if total is not None:
+                        continue  # grid size changed mid-range: keep the first size
+                    cols, rows, total = r["cols"], r["rows"], [0.0] * len(g)
+                total = [a + b for a, b in zip(total, g)]
+        return None if total is None else {"cols": cols, "rows": rows, "grid": total}
+
     def top_items(self, *, camera_id=None, ts_from=None, ts_to=None, limit=30) -> list[dict]:
         clauses, params = [], []
         self._where(clauses, params, ts_col="first_ts", camera_id=camera_id, ts_from=ts_from, ts_to=ts_to)
@@ -372,6 +553,8 @@ class Database:
                 conn.execute("DELETE FROM events")
                 conn.execute("DELETE FROM tracks")
                 conn.execute("DELETE FROM samples")
+                conn.execute("DELETE FROM zone_samples")
+                conn.execute("DELETE FROM heat")
             conn.execute("VACUUM")
 
     @staticmethod
@@ -385,4 +568,6 @@ class Database:
         d = dict(r)
         d["items"] = json.loads(d["items"]) if d.get("items") else {}
         d["alert"] = bool(d.get("alert"))
+        d["zones"] = json.loads(d["zones"]) if d.get("zones") else {}
+        d["visitor"] = None if d.get("visitor") is None else bool(d["visitor"])
         return d

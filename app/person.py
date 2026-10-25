@@ -24,7 +24,8 @@ class Person:
     side: str = "unknown"  # crossing side: "in" | "out" | "unknown"
     ppe: list = field(default_factory=list)  # PpeFinding attached (zone PPE task)
     ppe_alert: bool = False  # has a NO-* PPE finding
-    ppe_zone: bool = False  # inside the zone of a camera with the ppe task (set each frame)
+    ppe_zone: bool = False  # inside a zone with the ppe task (set each frame)
+    zones: dict = field(default_factory=dict)  # zone_id -> time this visit started, for the zones the person is in
 
     def foot_point(self) -> tuple[float, float]:
         """Ankle midpoint if visible; else weak ankles; else knees extended by the thigh; else box bottom-center.

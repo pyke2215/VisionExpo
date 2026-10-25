@@ -11,6 +11,9 @@ const state = {
 const AUTO_INTERVAL_MS = 10000;
 const PPE_VI = { Hardhat: "Có mũ", "NO-Hardhat": "Thiếu mũ", Gloves: "Có găng", "NO-Gloves": "Thiếu găng" };
 const GRID_REFRESH_MS = 250;
+const HEAT_REFRESH_MS = 30000;
+const zoneMeta = { colors: {} };
+const heat = { on: localStorage.getItem("live.heat") === "1", data: null, cam: null, timer: null };
 
 const $ = (id) => document.getElementById(id);
 const stage = $("stage");
@@ -70,9 +73,42 @@ function renderStage() {
   img.alt = cam.name;
   img.src = `/api/cameras/${encodeURIComponent(cam.id)}/stream.mjpg?t=${Date.now()}`;
   img.onerror = () => setTimeout(() => { if (!state.grid && state.selected === cam.id) img.src = `/api/cameras/${encodeURIComponent(cam.id)}/stream.mjpg?t=${Date.now()}`; }, 2000);
+  img.onload = placeHeat;
   stage.innerHTML = "";
   stage.appendChild(img);
+  const cv = document.createElement("canvas");
+  cv.className = "heat";
+  stage.appendChild(cv);
+  loadHeat();
 }
+
+// ---------- heatmap overlay (today, selected camera) ----------
+async function loadHeat() {
+  clearTimeout(heat.timer);
+  $("btnHeat").classList.toggle("on", heat.on);
+  if (!heat.on || state.grid || !state.selected) return placeHeat();
+  try {
+    heat.data = await api(`/api/heatmap?camera_id=${encodeURIComponent(state.selected)}&from=${localMidnight()}`);
+    heat.cam = state.selected;
+  } catch { heat.data = null; }
+  placeHeat();
+  heat.timer = setTimeout(loadHeat, HEAT_REFRESH_MS);
+}
+
+function placeHeat() {
+  const cv = stage.querySelector("canvas.heat");
+  const img = stage.querySelector("img");
+  if (!cv) return;
+  if (!heat.on || !img || !img.clientWidth || heat.cam !== state.selected) { cv.width = cv.height = 0; return; }
+  const s = stage.getBoundingClientRect(), r = img.getBoundingClientRect();
+  cv.style.left = `${r.left - s.left}px`;
+  cv.style.top = `${r.top - s.top}px`;
+  cv.style.width = `${r.width}px`;
+  cv.style.height = `${r.height}px`;
+  drawHeat(cv, heat.data, Math.round(r.width), Math.round(r.height));
+}
+
+const zoneDot = (kind) => `<i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${zoneMeta.colors[kind] || "#ccc"}"></i>`;
 
 function renderList() {
   const list = $("camList");
@@ -100,11 +136,23 @@ function renderSide() {
         .map(
           (p) => `<div class="it ${p.ppe_alert ? "alert" : ""}"><strong>#${p.track_id ?? "?"}</strong>
           <span class="tag ${p.side}">${p.side === "in" ? "TRONG" : p.side === "out" ? "NGOÀI" : "?"}</span>
+          ${(p.zones || []).map((z) => `<span class="tag unknown">${zoneDot(z.kind)} ${esc(z.name)} ${fmtDuration(z.dwell_s)}</span>`).join("")}
           ${(p.ppe || []).map((l) => `<span class="tag ${l.startsWith("NO-") ? "alert" : "in"}">${esc(PPE_VI[l] || l)}</span>`).join("")}
           ${state.grid ? `<span class="muted small">${esc(p.cam)}</span>` : ""}</div>`
         )
         .join("")
     : `<div class="muted small">Không có ai</div>`;
+
+  const zones = cams.flatMap((c) => ((c.crossing || {}).zones || []).map((z) => ({ ...z, cam: c.name })));
+  $("zonePanel").classList.toggle("hidden", !zones.length);
+  $("zoneList").innerHTML = zones
+    .map((z) => `<div class="it ${z.crowded ? "alert" : ""}">${zoneDot(z.kind)}<strong>${esc(z.name)}</strong>
+      <span class="grow muted small">${state.grid ? esc(z.cam) : ""}</span>
+      <strong>${z.inside}</strong><span class="muted small">người</span>
+      ${z.dwell_avg_s != null ? `<span class="muted small">TB ${fmtDuration(z.dwell_avg_s)}</span>` : ""}
+      ${z.tasks.includes("count") ? `<span class="muted small">vào ${z.entries}/ra ${z.exits}</span>` : ""}
+      ${z.crowded ? `<span class="tag alert">ĐÔNG</span>` : ""}</div>`)
+    .join("");
 
   const events = cams
     .flatMap((c) => ((c.crossing || {}).events || []).map((e) => ({ ...e, cam: c.name })))
@@ -114,7 +162,7 @@ function renderSide() {
     ? events
         .map(
           (e) => `<div class="it"><span class="tag ${e.direction}">${e.direction === "in" ? "VÀO" : "RA"}</span>
-          <strong>#${e.track_id}</strong><span class="muted small grow">${esc(e.cam)}</span>
+          <strong>#${e.track_id}</strong><span class="muted small grow">${esc(e.zone_name || e.cam)}${e.dwell_s != null ? ` · ${fmtDuration(e.dwell_s)}` : ""}</span>
           <span class="muted small">${fmtTime(e.ts)}</span></div>`
         )
         .join("")
@@ -139,6 +187,7 @@ async function poll() {
     $("kPersons").textContent = s.totals.persons;
     $("kInside").textContent = s.totals.inside;
     $("kOutside").textContent = s.totals.outside;
+    $("kVisitors").textContent = s.totals.visitors_today ?? 0;
     $("kPpe").textContent = s.totals.ppe_alerts || 0;
     $("kPpeBox").classList.toggle("active", (s.totals.ppe_alerts || 0) > 0);
     const pp = s.ppe || {};
@@ -175,6 +224,13 @@ function toggleKiosk() {
 $("btnGrid").onclick = () => { state.grid = !state.grid; renderStage(); renderList(); };
 $("btnAuto").onclick = () => setAuto(!state.auto);
 $("btnKiosk").onclick = toggleKiosk;
+$("btnHeat").onclick = () => {
+  heat.on = !heat.on;
+  try { localStorage.setItem("live.heat", heat.on ? "1" : "0"); } catch { /* private mode */ }
+  loadHeat();
+};
+window.addEventListener("resize", placeHeat);
+api("/api/zones/meta").then((m) => Object.assign(zoneMeta, m)).catch(() => {});
 $("btnFull").onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
 $("btnReset").onclick = async () => {
   if (!confirm("Reset bộ đếm vào/ra của tất cả camera?")) return;

@@ -52,6 +52,38 @@
     </section>
 
     <section class="panel">
+      <div class="row" style="margin-bottom:8px">
+        <h2 class="grow" style="margin:0">Theo vùng</h2>
+        <label class="small">Khách = ở trong vùng ≥ <input type="number" id="visitorMin" min="1" max="3600" step="1" style="width:64px" /> giây</label>
+        <button id="btnSaveVisitor">Lưu</button>
+      </div>
+      <table>
+        <thead><tr><th>Camera</th><th>Vùng</th><th>Khách</th><th>Lượt ghé</th><th>Ở lại TB</th><th>Trung vị</th><th>Vào / ra</th><th>Đông nhất</th><th>TB người</th><th>Lần đông</th></tr></thead>
+        <tbody id="zoneRows"></tbody>
+      </table>
+      <p class="muted small" style="margin:6px 0 0">"Khách" là lượt người ở trong vùng lâu hơn ngưỡng trên (lọc người đi ngang). Booth: dùng cho số "Khách hôm nay". "Đông nhất" và "TB người" lấy từ mẫu số liệu mỗi vài giây.</p>
+    </section>
+
+    <section class="two-col">
+      <div class="panel">
+        <div class="row"><h2 class="grow" style="margin:0">Khách theo giờ</h2>
+          <select id="vZone"><option value="">Booth (khách thật)</option></select>
+        </div>
+        <svg class="chart" id="vChart" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="panel">
+        <div class="row"><h2 class="grow" style="margin:0">Heatmap vị trí đứng</h2>
+          <select id="hCamera"></select>
+        </div>
+        <div style="position:relative; background:#000; border-radius:8px; overflow:hidden; aspect-ratio:16/9">
+          <img id="hImg" alt="" style="width:100%; height:100%; object-fit:fill; display:block" />
+          <canvas id="hCanvas" style="position:absolute; inset:0; width:100%; height:100%"></canvas>
+        </div>
+        <p class="muted small" id="hInfo" style="margin:6px 0 0"></p>
+      </div>
+    </section>
+
+    <section class="panel">
       <div class="tabs">
         <button data-tab="tracks" class="active">Lượt người</button>
         <button data-tab="events">Sự kiện</button>
@@ -65,7 +97,7 @@
           </label>
         </div>
         <table>
-          <thead><tr><th>Bắt đầu</th><th>Camera</th><th>#</th><th>Thời gian</th><th>Chiều</th><th>PPE</th></tr></thead>
+          <thead><tr><th>Bắt đầu</th><th>Camera</th><th>#</th><th>Thời gian</th><th>Chiều</th><th>Vùng (thời gian ở)</th><th>PPE</th></tr></thead>
           <tbody id="trackRows"></tbody>
         </table>
         <div class="pager"><span class="muted small" id="trackInfo"></span><button id="tPrev">‹</button><button id="tNext">›</button></div>

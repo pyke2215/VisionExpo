@@ -102,31 +102,37 @@ async function renderCams() {
     cams
       .map((c) => {
         const cr = c.crossing || {};
-        const zone = cr.mode === "zone" && (cr.zone || []).length >= 3;
-        const on = zone && (cr.tasks || []).includes("ppe");
-        const note = !c.enabled ? "camera đang tắt" : zone ? `vùng ${cr.zone.length} điểm` : "chưa có vùng polygon";
-        return `<div class="it row">
-          <label class="check grow"><input type="checkbox" data-id="${esc(c.id)}" ${on ? "checked" : ""} ${zone ? "" : "disabled"} />
-            <strong>${esc(c.name)}</strong> <span class="muted small">${esc(note)}</span></label>
-          <a class="btn" href="/calibrate/${encodeURIComponent(c.id)}">${zone ? "Sửa vùng" : "Vẽ vùng"}</a>
+        const zones = cr.mode === "zone" ? cr.zones || [] : [];
+        const note = !c.enabled ? " · camera đang tắt" : "";
+        const rows = zones
+          .map((z) => `<label class="check" style="margin-left:18px">
+              <input type="checkbox" data-cam="${esc(c.id)}" data-zone="${esc(z.id)}" ${(z.tasks || []).includes("ppe") ? "checked" : ""} />
+              ${esc(z.name)} <span class="muted small">${esc(z.kind)}</span></label>`)
+          .join("");
+        return `<div class="it col" style="align-items:stretch">
+          <div class="row"><strong class="grow">${esc(c.name)}<span class="muted small">${esc(note)}</span></strong>
+            <a class="btn" href="/calibrate/${encodeURIComponent(c.id)}">${zones.length ? "Sửa vùng" : "Vẽ vùng"}</a></div>
+          ${rows || `<span class="muted small" style="margin-left:18px">chưa có vùng polygon</span>`}
         </div>`;
       })
       .join("") || `<span class="muted">Chưa có camera</span>`;
-  $("camRows").querySelectorAll("input[data-id]").forEach((el) =>
-    el.addEventListener("change", () => setCameraPpe(cams.find((c) => c.id === el.dataset.id), el.checked))
+  $("camRows").querySelectorAll("input[data-zone]").forEach((el) =>
+    el.addEventListener("change", () =>
+      setZonePpe(cams.find((c) => c.id === el.dataset.cam), el.dataset.zone, el.checked))
   );
 }
 
-async function setCameraPpe(cam, on) {
-  const cr = cam.crossing || {};
-  const tasks = (cr.tasks || []).filter((t) => t !== "ppe");
-  if (on) tasks.push("ppe");
+async function setZonePpe(cam, zoneId, on) {
+  const zones = ((cam.crossing || {}).zones || []).map((z) => {
+    if (z.id !== zoneId) return z;
+    const tasks = (z.tasks || []).filter((t) => t !== "ppe");
+    if (on) tasks.push("ppe");
+    return { ...z, tasks };
+  });
+  const name = zones.find((z) => z.id === zoneId)?.name || zoneId;
   try {
-    await api(`/api/cameras/${encodeURIComponent(cam.id)}/crossing`, {
-      method: "PUT",
-      body: { mode: cr.mode, points: cr.points || [], inward_point: cr.inward_point, zone: cr.zone || [], tasks },
-    });
-    toast(on ? `Đã bật PPE cho ${cam.name}` : `Đã tắt PPE cho ${cam.name}`);
+    await api(`/api/cameras/${encodeURIComponent(cam.id)}/crossing`, { method: "PUT", body: { zones } });
+    toast(on ? `Đã bật PPE cho vùng ${name}` : `Đã tắt PPE cho vùng ${name}`);
   } catch (e) {
     toast(e.message, true);
   }

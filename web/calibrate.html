@@ -31,11 +31,28 @@
           <ol class="steps" id="steps"></ol>
           <p class="muted small" id="hint"></p>
         </div>
-        <div class="panel col">
-          <label class="check"><input type="checkbox" id="chkCount" checked /> <span id="countLabel">Đếm vào/ra</span></label>
-          <label class="check" id="ppeWrap"><input type="checkbox" id="chkPpe" /> PPE (mũ bảo hiểm + găng tay) trong vùng</label>
-          <p class="muted small" id="ppeHint" style="margin:0">PPE chỉ dùng với vùng polygon: báo Hardhat / Gloves và cảnh báo NO-Hardhat / NO-Gloves cho người đang ở trong vùng.</p>
-          <div class="col" id="ruleWrap" style="gap:6px">
+        <div class="panel col" id="lineWrap">
+          <label class="check"><input type="checkbox" id="chkCount" checked /> Đếm vào/ra qua line</label>
+          <div class="row">
+            <button id="btnFlip">Đảo chiều VÀO/RA</button>
+            <button id="btnClear">Vẽ lại</button>
+          </div>
+        </div>
+        <div class="panel col" id="zoneWrap">
+          <h3 style="margin:0">Các vùng</h3>
+          <div class="list" id="zoneList"></div>
+          <div class="row">
+            <select id="selNewKind" class="grow"></select>
+            <button id="btnAddZone">+ Thêm vùng</button>
+          </div>
+          <p class="muted small" style="margin:0">Vùng <b>Booth area</b> (lớn nhất): người ở trong mới được gửi sang màn hình 3D. Các vùng được lồng nhau, một người có thể ở nhiều vùng cùng lúc. Mọi vùng đều có thống kê số người và thời gian ở lại, kể cả khi không bật task nào.</p>
+          <div class="col" id="zoneProps" style="gap:8px; border-top:1px solid var(--border); padding-top:10px">
+            <div class="row">
+              <label class="small grow">Tên <input type="text" id="zName" maxlength="40" style="width:100%" /></label>
+              <label class="small">Loại <select id="zKind"></select></label>
+            </div>
+            <label class="check"><input type="checkbox" id="zCount" /> Đếm vào/ra (sự kiện VÀO / RA kèm thời gian ở lại)</label>
+            <label class="check"><input type="checkbox" id="zPpe" /> PPE (mũ bảo hộ + găng tay) trong vùng này</label>
             <label class="small">Tính là TRONG vùng khi
               <select id="selRule">
                 <option value="body">phần lớn thân dưới nằm trong vùng</option>
@@ -44,12 +61,15 @@
               </select>
             </label>
             <label class="small" id="overlapWrap">Tối thiểu <input type="number" id="numOverlap" min="10" max="90" step="5" value="50" style="width:64px" /> <span id="overlapWhat">% thân dưới (40% dưới của khung người)</span></label>
-            <p class="muted small" style="margin:0">"Thân dưới" hợp với người ngồi, người bị khung hình cắt chân hoặc chỉ thò một phần ra ngoài vùng. "Cả người" hợp khi vùng phủ gần hết khung hình (cả tường, không chỉ sàn); với vùng chỉ vẽ trên sàn, người đứng trong vùng có thân trên nằm ngoài polygon nên dễ bị tính ngoài. "Điểm chân" chính xác hơn khi vùng vẽ sát lối đi và luôn thấy rõ chân.</p>
+            <label class="small">Cảnh báo đông khi hơn <input type="number" id="zCrowdMax" min="0" max="100" step="1" value="0" style="width:56px" /> người trong <input type="number" id="zCrowdS" min="1" max="600" step="1" value="10" style="width:56px" /> giây <span class="muted">(0 = tắt)</span></label>
+            <p class="muted small" style="margin:0">"Thân dưới" hợp với người ngồi hoặc bị khung hình cắt chân. "Cả người" hợp khi vùng phủ cả tường. "Điểm chân" chính xác khi vùng vẽ sát lối đi và luôn thấy rõ chân.</p>
+            <div class="row">
+              <button id="btnClearZone">Vẽ lại vùng này</button>
+              <button id="btnDelZone" class="danger">Xóa vùng</button>
+            </div>
           </div>
-          <div class="row">
-            <button id="btnFlip">Đảo chiều VÀO/RA</button>
-            <button id="btnClear">Vẽ lại</button>
-          </div>
+        </div>
+        <div class="panel col">
           <div class="row">
             <button id="btnSave" class="primary grow">Lưu</button>
           </div>
@@ -62,6 +82,7 @@
             <span>Trong <strong id="cInside" style="color:var(--green)">0</strong></span>
             <span>Ngoài <strong id="cOutside" style="color:var(--orange)">0</strong></span>
           </div>
+          <div class="list small" id="cZones" style="margin-top:8px"></div>
           <div class="row" style="margin-top:10px">
             <button id="btnResetCount" class="danger">Reset đếm</button>
             <a class="btn" id="lnkLive" href="/">Xem live</a>

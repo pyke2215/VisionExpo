@@ -1,22 +1,16 @@
-"""People counting by line crossing or by zone (polygon) entry / exit, on the foot point of each track.
+"""People counting by line crossing, or occupancy / entry / exit per typed zone (polygons in app/zones.py).
 
 Config is normalized (0..1) so it survives resolution changes:
-    {"enabled": true, "mode": "line" | "zone",
+    {"mode": "line" | "zone",
      "points": [{"x":..,"y":..}, {"x":..,"y":..}], "inward_point": {"x":..,"y":..},   # line mode
-     "zone": [{"x":..,"y":..}, ...],                                                     # zone mode, >= 3 points
-     "tasks": ["count", "ppe"]}                                                          # features for this geometry
+     "tasks": ["count"],                                                                 # line mode
+     "zones": [{"id", "kind", "name", "points", "tasks", "rule", "overlap", ...}]}     # zone mode, see zones.py
 
 line: a track whose foot point changes side of the segment A-B counts IN (towards inward_point) or OUT.
-zone: a track that goes from outside to inside the polygon counts IN, inside to outside OUT;
-      OUT events carry the time spent inside.
-      "zone_rule": "body" (default) = inside when >= zone_overlap of the lower part of the box lies in the polygon;
-      "box" = the same share over the whole box (zone drawn over the whole scene, not just the floor);
-      "foot" = inside when the foot point does. The foot point of a seated person or one cut off by the frame edge
-      is a guess, so one leg or a desk-side lean puts them "out" although most of the body is in.
-A track first seen already inside the zone is inside but not an entry (no double counts on ID switches).
-`inside` / `outside` are the people currently visible on each side (line: the inward side counts as inside).
-
-`tasks`: "count" emits crossing events; "ppe" (zone only) still updates `.side` so PPE can filter by inside.
+zone: every zone is judged by its own ZoneTracker (zones may nest). Person.zones = {zone_id: entered_at} for the
+      zones a person is in now; Person.side follows the primary zone (the first "booth" zone, else the first
+      zone), so the HUD, `inside` / `outside` and the person colours keep one meaning.
+`inside` / `outside` are the people currently visible on each side of the line / primary zone.
 """
 
 from __future__ import annotations
@@ -26,163 +20,166 @@ import threading
 import time
 from collections import deque
 
-import cv2
-import numpy as np
-
 from .person import Person
+from .zones import DASHBOARD_KIND, MAX_ZONE_POINTS, ZoneTracker, dead_band, settled  # noqa: F401  (re-export)
 
 SEGMENT_SLACK = 0.1  # accept crossings slightly beyond the segment ends (fraction of length)
 DEAD_ZONE_FRAC = 0.006  # band around the line / zone border (fraction of frame diagonal) where side is undecided
 COOLDOWN_S = 1.0  # ignore repeated flips of the same track within this window
-SIDE_CONFIRM_FRAMES = 3  # a new side must hold this many frames in a row (keypoint jitter on a turn)
 STALE_TRACK_S = 30.0
-MAX_ZONE_POINTS = 32
-BODY_FRAC = 0.4  # body rule: bottom share of the box that is judged (legs / lap; the head sits above a floor zone)
-OVERLAP_HYST = 0.05  # body rule: in above overlap + this, out below overlap - this, undecided between
-ALLOWED_TASKS = frozenset({"count", "ppe"})
+LINE_KEY = "_line"  # count_state() key of the line counters
 
 
 def line_is_valid(cfg: dict | None) -> bool:
     return len((cfg or {}).get("points") or []) >= 2
 
 
-def zone_is_valid(cfg: dict | None) -> bool:
-    return len((cfg or {}).get("zone") or []) >= 3
-
-
 def mode_of(cfg: dict | None) -> str:
     return "zone" if (cfg or {}).get("mode") == "zone" else "line"
-
-
-def tasks_of(cfg: dict | None) -> list[str]:
-    raw = (cfg or {}).get("tasks")
-    if raw is None:
-        return ["count"] if (cfg or {}).get("enabled", True) else []
-    out: list[str] = []
-    for t in raw:
-        key = str(t).lower().strip()
-        if key in ALLOWED_TASKS and key not in out:
-            out.append(key)
-    return out
 
 
 class CrossingCounter:
     def __init__(self, cfg: dict | None) -> None:
         self._lock = threading.Lock()
         self.cfg: dict = {}
-        self.entries = 0
-        self.exits = 0
+        self.zones: list[ZoneTracker] = []
+        self.line_entries = 0
+        self.line_exits = 0
         self.inside = 0
         self.outside = 0
         self.events: deque[dict] = deque(maxlen=30)
         self._last_side: dict[int, int] = {}
-        self._pending: dict[int, tuple[int, int]] = {}  # tid -> (candidate side, frames seen)
+        self._pending: dict[int, tuple[int, int]] = {}
         self._last_seen: dict[int, float] = {}
         self._last_event: dict[int, float] = {}
-        self._entered_at: dict[int, float] = {}
-        self._zone_sum: tuple[tuple, np.ndarray] | None = None  # (key, integral image of the zone mask)
         self.set_config(cfg)
 
+    # ---------- config ----------
     @property
     def mode(self) -> str:
         return mode_of(self.cfg)
 
     def tasks(self) -> list[str]:
-        return tasks_of(self.cfg)
+        if self.mode == "zone":
+            out: list[str] = []
+            for z in self.zones:
+                out += [t for t in z.cfg.get("tasks", []) if t not in out]
+            return out
+        return ["count"] if "count" in (self.cfg.get("tasks") or []) else []
 
     def has_task(self, name: str) -> bool:
-        return name in tasks_of(self.cfg)
+        return name in self.tasks()
 
     @property
     def geometry_ok(self) -> bool:
-        return zone_is_valid(self.cfg) if self.mode == "zone" else line_is_valid(self.cfg)
+        return bool(self.zones) if self.mode == "zone" else line_is_valid(self.cfg)
 
     @property
     def enabled(self) -> bool:
-        """Counting is on: task count + valid geometry."""
+        """Counting is on: some geometry has the count task."""
         return self.has_task("count") and self.geometry_ok
 
     @property
     def ppe_active(self) -> bool:
-        """Zone has PPE task and a valid polygon (sides are maintained for inside filter)."""
-        return self.mode == "zone" and self.has_task("ppe") and zone_is_valid(self.cfg)
+        """At least one zone has the PPE task."""
+        return bool(self.ppe_zones)
 
     @property
     def active(self) -> bool:
-        """Geometry is used for counting and/or PPE side tracking."""
-        if not self.geometry_ok:
-            return False
-        return self.has_task("count") or (self.mode == "zone" and self.has_task("ppe"))
+        """Geometry is in use: any zone (occupancy is kept even without tasks), or a counting line."""
+        return bool(self.zones) if self.mode == "zone" else self.enabled
+
+    @property
+    def ppe_zones(self) -> list[ZoneTracker]:
+        return [z for z in self.zones if z.has_task("ppe")] if self.mode == "zone" else []
+
+    @property
+    def dashboard_zones(self) -> list[ZoneTracker]:
+        return [z for z in self.zones if z.kind == DASHBOARD_KIND] if self.mode == "zone" else []
+
+    @property
+    def primary(self) -> ZoneTracker | None:
+        if self.mode != "zone" or not self.zones:
+            return None
+        return next((z for z in self.zones if z.kind == DASHBOARD_KIND), self.zones[0])
 
     def set_config(self, cfg: dict | None) -> None:
+        cfg = dict(cfg or {})
         with self._lock:
-            key = lambda c: (mode_of(c), c.get("points"), c.get("inward_point"), c.get("zone"), tuple(tasks_of(c)),  # noqa: E731
-                             c.get("zone_rule"), c.get("zone_overlap"))
-            changed = key(self.cfg) != key(cfg or {})
-            self.cfg = dict(cfg or {})
-            if changed:
-                self._clear_tracks()
+            line_key = lambda c: (mode_of(c), c.get("points"), c.get("inward_point"))  # noqa: E731
+            if line_key(self.cfg) != line_key(cfg):
+                self._last_side.clear()
+                self._pending.clear()
+                self._last_event.clear()
+            old = {z.id: z for z in self.zones}
+            zones: list[ZoneTracker] = []
+            for zc in (cfg.get("zones") or []) if mode_of(cfg) == "zone" else []:
+                t = old.get(zc["id"])
+                if t is None:
+                    t = ZoneTracker(zc)
+                else:
+                    t.set_config(zc)  # keeps counts and per-track state unless the geometry changed
+                zones.append(t)
+            self.zones = zones
+            self.cfg = cfg
 
-    def _clear_tracks(self) -> None:
-        self._last_side.clear()
-        self._pending.clear()
-        self._last_event.clear()
-        self._entered_at.clear()
-        self.inside = 0
-        self.outside = 0
+    # ---------- counts ----------
+    @property
+    def entries(self) -> int:
+        if self.mode == "zone":
+            return sum(z.entries for z in self.zones if z.has_task("count"))
+        return self.line_entries
+
+    @property
+    def exits(self) -> int:
+        if self.mode == "zone":
+            return sum(z.exits for z in self.zones if z.has_task("count"))
+        return self.line_exits
+
+    def count_state(self) -> dict:
+        """{LINE_KEY | zone_id: (entries, exits)}: carried over when a worker restarts."""
+        with self._lock:
+            out = {LINE_KEY: (self.line_entries, self.line_exits)}
+            out.update({z.id: (z.entries, z.exits) for z in self.zones})
+            return out
+
+    def restore_counts(self, counts: dict) -> None:
+        """Inverse of count_state(); a None key (events saved before zones had ids) goes to the primary zone."""
+        with self._lock:
+            by_id = {z.id: z for z in self.zones}
+            for key, (n_in, n_out) in (counts or {}).items():
+                if key == LINE_KEY:
+                    self.line_entries, self.line_exits = int(n_in), int(n_out)
+                    continue
+                z = by_id.get(key) if key is not None else (self.primary if self.mode == "zone" else None)
+                if z is not None:
+                    z.entries += int(n_in)
+                    z.exits += int(n_out)
+                elif key is None:
+                    self.line_entries += int(n_in)
+                    self.line_exits += int(n_out)
 
     def reset_counts(self) -> None:
         with self._lock:
-            self.entries = 0
-            self.exits = 0
+            self.line_entries = 0
+            self.line_exits = 0
             self.events.clear()
-            self._clear_tracks()
+            self._last_side.clear()
+            self._pending.clear()
+            self._last_event.clear()
+            for z in self.zones:
+                z.reset_counts()
+            self.inside = self.outside = 0
 
+    # ---------- geometry ----------
     def line_px(self, w: int, h: int) -> tuple[tuple[float, float], tuple[float, float]] | None:
         if not line_is_valid(self.cfg):
             return None
         a, b = self.cfg["points"][:2]
         return (float(a["x"]) * w, float(a["y"]) * h), (float(b["x"]) * w, float(b["y"]) * h)
 
-    def zone_px(self, w: int, h: int) -> list[tuple[float, float]] | None:
-        if not zone_is_valid(self.cfg):
-            return None
-        return [(float(p["x"]) * w, float(p["y"]) * h) for p in self.cfg["zone"][:MAX_ZONE_POINTS]]
-
-    @property
-    def zone_rule(self) -> str:
-        rule = self.cfg.get("zone_rule")
-        return rule if rule in ("foot", "box") else "body"
-
-    def _zone_integral(self, w: int, h: int) -> np.ndarray:
-        """Summed-area table of the filled polygon, so any box's overlap is 4 lookups (rebuilt on size / zone change)."""
-        key = (w, h, tuple((p["x"], p["y"]) for p in self.cfg["zone"][:MAX_ZONE_POINTS]))
-        if self._zone_sum is None or self._zone_sum[0] != key:
-            mask = np.zeros((h, w), np.uint8)
-            cv2.fillPoly(mask, [np.array(self.zone_px(w, h), np.float32).round().astype(np.int32)], 1)
-            self._zone_sum = (key, cv2.integral(mask))
-        return self._zone_sum[1]
-
-    def _body_side(self, p: Person, w: int, h: int, prev: int | None) -> int:
-        """1 / -1 / 0 from the share of the lower box inside the zone.
-
-        Once a track has a side, a hysteresis band around zone_overlap returns 0 (keep it); a first reading
-        decides on the threshold alone, so someone standing in the band still gets a side.
-        """
-        x1, y1, x2, y2 = p.box
-        x1, x2 = int(max(0, min(w, x1))), int(max(0, min(w, x2)))
-        y2i = int(max(0, min(h, y2)))
-        frac = 1.0 if self.zone_rule == "box" else BODY_FRAC
-        y1i = int(max(0, min(h, y2 - frac * (y2 - y1))))
-        area = (x2 - x1) * (y2i - y1i)
-        if area <= 0:
-            return 0
-        s = self._zone_integral(w, h)
-        share = float(s[y2i, x2] - s[y1i, x2] - s[y2i, x1] + s[y1i, x1]) / area
-        thr = float(self.cfg.get("zone_overlap", 0.5))
-        if prev is None:
-            return 1 if share >= thr else -1
-        return 1 if share >= thr + OVERLAP_HYST else -1 if share <= thr - OVERLAP_HYST else 0
+    def zones_px(self, w: int, h: int) -> list[tuple[ZoneTracker, list[tuple[float, float]]]]:
+        return [(z, z.polygon_px(w, h)) for z in self.zones] if self.mode == "zone" else []
 
     def _in_sign(self, a, b, w: int, h: int) -> int:
         inward = self.cfg.get("inward_point")
@@ -192,34 +189,45 @@ class CrossingCounter:
                 return 1 if s > 0 else -1
         return 1
 
+    # ---------- update ----------
     def update(self, persons: list[Person], w: int, h: int, now: float | None = None) -> list[dict]:
-        """Update sides, annotate persons with .side, return new crossing events (only if task count)."""
+        """Update sides / zones on the persons, return new events (crossing only for count tasks, crowd)."""
         now = time.time() if now is None else now
         with self._lock:
+            for p in persons:
+                p.zones = {}
             if not self.active:
                 self.inside = self.outside = 0
                 for p in persons:
                     p.side = "unknown"
                 return []
-            dead = max(3.0, DEAD_ZONE_FRAC * math.hypot(w, h))
+            dead = dead_band(w, h, DEAD_ZONE_FRAC)
             if self.mode == "zone":
-                events = self._update_zone(persons, w, h, now, dead)
+                events = self._update_zones(persons, w, h, now, dead)
             else:
                 events = self._update_line(persons, w, h, now, dead)
             self.inside = sum(1 for p in persons if p.side == "in")
             self.outside = sum(1 for p in persons if p.side == "out")
             for ev in events:
-                self.events.appendleft(ev)
+                if ev.get("type") == "crossing":
+                    self.events.appendleft(ev)
             self._purge_stale(now)
-            return events if self.has_task("count") else []
+            return events
 
-    def _count(self, tid: int, direction: str, now: float, extra: dict | None = None) -> dict:
-        if direction == "in":
-            self.entries += 1
-        else:
-            self.exits += 1
-        self._last_event[tid] = now
-        return {"ts": now, "track_id": tid, "direction": direction, "mode": self.mode, **(extra or {})}
+    def _update_zones(self, persons: list[Person], w: int, h: int, now: float, dead: float) -> list[dict]:
+        events: list[dict] = []
+        primary = self.primary
+        for z in self.zones:
+            evs, sides = z.update(persons, w, h, now, dead)
+            events += evs
+            for p in persons:
+                side = sides.get(id(p), "unknown")
+                if side == "in":
+                    tid = p.track_id
+                    p.zones[z.id] = z.entered_at.get(tid, now) if tid is not None else now
+                if z is primary:
+                    p.side = side
+        return events
 
     def _update_line(self, persons: list[Person], w: int, h: int, now: float, dead: float) -> list[dict]:
         events: list[dict] = []
@@ -228,7 +236,6 @@ class CrossingCounter:
         if ab_len < 1.0:
             return events
         in_sign = self._in_sign(a, b, w, h)
-        do_count = self.has_task("count")
         for p in persons:
             fx, fy = p.foot_point()
             dist = _cross(a, b, (fx, fy)) / ab_len
@@ -240,80 +247,36 @@ class CrossingCounter:
                 continue
             self._last_seen[tid] = now
             prev = self._last_side.get(tid)
-            if side != 0 and not self._settled(tid, side, prev):
+            if side != 0 and not settled(self._pending, tid, side, prev):
                 side = 0  # not confirmed yet: keep the previous side this frame
             if side != 0:
                 within = -SEGMENT_SLACK <= t <= 1.0 + SEGMENT_SLACK
                 cooled = now - self._last_event.get(tid, 0.0) >= COOLDOWN_S
-                if do_count and prev is not None and prev != side and within and cooled:
-                    events.append(self._count(tid, "in" if side == in_sign else "out", now))
+                if prev is not None and prev != side and within and cooled:
+                    direction = "in" if side == in_sign else "out"
+                    if direction == "in":
+                        self.line_entries += 1
+                    else:
+                        self.line_exits += 1
+                    self._last_event[tid] = now
+                    events.append({"type": "crossing", "ts": now, "track_id": tid, "direction": direction,
+                                   "mode": "line"})
                 self._last_side[tid] = side
             cur = self._last_side.get(tid)
             p.side = "unknown" if cur is None else ("in" if cur == in_sign else "out")
         return events
 
-    def _update_zone(self, persons: list[Person], w: int, h: int, now: float, dead: float) -> list[dict]:
-        events: list[dict] = []
-        poly = np.array(self.zone_px(w, h), dtype=np.float32).reshape(-1, 1, 2)
-        do_count = self.has_task("count")
-        body = self.zone_rule != "foot"
-        for p in persons:
-            if body:
-                side = self._body_side(p, w, h, self._last_side.get(p.track_id) if p.track_id is not None else None)
-            else:
-                fx, fy = p.foot_point()
-                dist = cv2.pointPolygonTest(poly, (float(fx), float(fy)), True)  # > 0 inside
-                side = 1 if dist > dead else -1 if dist < -dead else 0
-            tid = p.track_id
-            if tid is None:
-                p.side = "unknown" if side == 0 else ("in" if side == 1 else "out")
-                continue
-            self._last_seen[tid] = now
-            prev = self._last_side.get(tid)
-            if side != 0 and not self._settled(tid, side, prev):
-                side = 0  # not confirmed yet: keep the previous side this frame
-            if side != 0:
-                cooled = now - self._last_event.get(tid, 0.0) >= COOLDOWN_S
-                if do_count and prev is not None and prev != side and cooled:
-                    if side == 1:
-                        self._entered_at[tid] = now
-                        events.append(self._count(tid, "in", now))
-                    else:
-                        since = self._entered_at.pop(tid, None)
-                        extra = {"dwell_s": round(now - since, 1)} if since is not None else None
-                        events.append(self._count(tid, "out", now, extra))
-                elif prev is None and side == 1:
-                    self._entered_at.setdefault(tid, now)
-                self._last_side[tid] = side
-            cur = self._last_side.get(tid)
-            p.side = "unknown" if cur is None else ("in" if cur == 1 else "out")
-        return events
-
-    def _settled(self, tid: int, side: int, prev: int | None) -> bool:
-        """True when `side` may replace `prev`: same side, first reading, or held SIDE_CONFIRM_FRAMES frames."""
-        if prev is None or side == prev:
-            self._pending.pop(tid, None)
-            return True
-        cand, n = self._pending.get(tid, (side, 0))
-        n = n + 1 if cand == side else 1
-        if n >= SIDE_CONFIRM_FRAMES:
-            self._pending.pop(tid, None)
-            return True
-        self._pending[tid] = (side, n)
-        return False
-
     def _purge_stale(self, now: float) -> None:
         if len(self._last_seen) <= 300:
             return
         for t in [t for t, ts in self._last_seen.items() if now - ts > STALE_TRACK_S]:
-            self._last_seen.pop(t, None)
-            self._last_side.pop(t, None)
-            self._pending.pop(t, None)
-            self._last_event.pop(t, None)
-            self._entered_at.pop(t, None)
+            for d in (self._last_seen, self._last_side, self._pending, self._last_event):
+                d.pop(t, None)
 
     def stats(self) -> dict:
+        now = time.time()
         with self._lock:
+            primary = self.primary
             return {
                 "enabled": self.enabled,
                 "ppe_active": self.ppe_active,
@@ -324,6 +287,8 @@ class CrossingCounter:
                 "entries": self.entries,
                 "exits": self.exits,
                 "events": list(self.events)[:10],
+                "primary_zone": primary.id if primary else None,
+                "zones": [z.stats(now) for z in self.zones],
             }
 
 

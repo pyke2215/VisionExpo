@@ -1,9 +1,10 @@
 """WebSocket push server on /ws (same port as the web app).
 
-Connect:  ws://HOST:PORT/ws?topics=status,events&cameras=camera_1&token=XXX
+Connect:  ws://HOST:PORT/ws?topics=status,events&cameras=camera_1&token=XXX[&inside=1]
+          inside=1: the people topic carries only people inside the camera's polygon (in_zone)
 Topics:   status  periodic totals + per-camera counters        (websocket.status_hz)
           people  periodic people per camera, normalized boxes  (websocket.people_hz)
-          events  crossing / ppe_alert / camera / reset, immediately
+          events  crossing / ppe_alert / crowd / camera / reset, immediately
           tracks  one summary per person after they leave the frame
 Client -> server JSON actions:
           {"action": "subscribe", "topics": [...]}     {"action": "unsubscribe", "topics": [...]}
@@ -23,7 +24,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 from . import __version__
 
 TOPICS = ("status", "people", "events", "tracks")
-EVENT_TOPIC = {"crossing": "events", "ppe_alert": "events", "camera": "events", "reset": "events", "track": "tracks"}
+EVENT_TOPIC = {"crossing": "events", "ppe_alert": "events", "crowd": "events", "camera": "events", "reset": "events",
+               "track": "tracks"}
 SEND_TIMEOUT_S = 2.0
 MAX_PENDING_EVENTS = 5000
 
@@ -36,6 +38,7 @@ class Client:
     agent: str
     topics: set[str]
     cameras: set[str] | None = None
+    inside_only: bool = False  # people topic: only people with in_zone
     connected_at: float = field(default_factory=time.time)
     sent: int = 0
     received: int = 0
@@ -50,6 +53,7 @@ class Client:
             "agent": self.agent,
             "topics": sorted(self.topics),
             "cameras": sorted(self.cameras) if self.cameras is not None else None,
+            "inside_only": self.inside_only,
             "connected_at": self.connected_at,
             "sent": self.sent,
             "received": self.received,
@@ -138,6 +142,7 @@ class WsHub:
                 "exits": cr.get("exits", 0),
                 "ppe": c.get("ppe", {}),
                 "ppe_alerts": c.get("ppe_alerts", 0),
+                "zones": cr.get("zones", []),
             })
         ppe = s.get("ppe") or {}
         required = ppe.get("required", []) if ppe.get("enabled") else []
@@ -176,6 +181,16 @@ class WsHub:
             return payload
         return {**payload, "cameras": [c for c in payload["cameras"] if c.get("id") in client.cameras]}
 
+    @staticmethod
+    def _filter_inside(payload: dict, client: Client) -> dict:
+        if not client.inside_only or payload.get("type") != "people":
+            return payload
+        cams = [{**c, "people": [p for p in c.get("people", []) if p.get("in_zone")]} for c in payload["cameras"]]
+        return {**payload, "cameras": cams}
+
+    def _view(self, payload: dict, client: Client) -> dict:
+        return self._filter_inside(self._filter_cameras(payload, client), client)
+
     async def _send(self, client: Client, text: str) -> bool:
         try:
             await asyncio.wait_for(client.ws.send_text(text), timeout=SEND_TIMEOUT_S)
@@ -190,7 +205,7 @@ class WsHub:
         if not targets:
             return
         plain = _dumps(payload)
-        texts = [plain if c.cameras is None else _dumps(self._filter_cameras(payload, c)) for c in targets]
+        texts = [plain if c.cameras is None and not c.inside_only else _dumps(self._view(payload, c)) for c in targets]
         results = await asyncio.gather(*(self._send(c, t) for c, t in zip(targets, texts)))
         self.sent_by_topic[topic] = self.sent_by_topic.get(topic, 0) + sum(results)
 
@@ -224,6 +239,7 @@ class WsHub:
             agent=ws.headers.get("user-agent", "")[:120],
             topics=topics,
             cameras=set(cams) if cams else None,
+            inside_only=str(q.get("inside") or "").lower() in ("1", "true", "yes"),
         )
         self._next_id += 1
         self.clients[client.id] = client

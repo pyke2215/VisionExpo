@@ -14,8 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .capture import grab_single_frame
-from .crossing import ALLOWED_TASKS, MAX_ZONE_POINTS
-from .settings_store import ZONE_TASKS
+from .zones import ZONE_COLORS, ZONE_KINDS, ZONE_RULES, ZONE_TASKS, normalize_zones
 from .manager import CameraManager
 from .paths import SHOW_DIRS, WEB_DIR
 from .settings_store import SettingsStore
@@ -165,52 +164,72 @@ def create_app(device: str | None = None) -> FastAPI:
     @app.put("/api/cameras/{cam_id}/crossing")
     def api_set_crossing(cam_id: str, payload: dict = Body(...)):
         cam = _camera_or_404(cam_id)
-        mode = payload.get("mode", "line")
+        cur = cam.get("crossing") or {}
+        mode = payload.get("mode", cur.get("mode", "line"))
         if mode not in ("line", "zone"):
             raise HTTPException(400, "mode must be 'line' or 'zone'")
-        pts = payload.get("points") or []
-        zone = payload.get("zone") or []
+        pts = payload.get("points", cur.get("points")) or []
         if pts and len(pts) != 2:
             raise HTTPException(400, "points must contain exactly 2 points (or be empty to clear)")
-        if zone and not 3 <= len(zone) <= MAX_ZONE_POINTS:
-            raise HTTPException(400, f"zone must contain 3..{MAX_ZONE_POINTS} points (or be empty to clear)")
-        inward = payload.get("inward_point")
-        for p in pts + zone + ([inward] if inward else []):
+        inward = payload.get("inward_point", cur.get("inward_point"))
+        for p in pts + ([inward] if inward else []):
             if not (0.0 <= float(p.get("x", -1)) <= 1.0 and 0.0 <= float(p.get("y", -1)) <= 1.0):
                 raise HTTPException(400, "points must be normalized to 0..1")
         norm = lambda p: {"x": float(p["x"]), "y": float(p["y"])}  # noqa: E731
-        if "tasks" in payload:
-            raw_tasks = payload.get("tasks") or []
-            if not isinstance(raw_tasks, list):
-                raise HTTPException(400, "tasks must be a list")
-            tasks = []
-            for t in raw_tasks:
-                key = str(t).lower().strip()
-                if key not in ALLOWED_TASKS:
-                    raise HTTPException(400, f"unknown task '{t}'; allowed: {sorted(ZONE_TASKS)}")
-                if key not in tasks:
-                    tasks.append(key)
-            if mode == "line":
-                tasks = [t for t in tasks if t == "count"]
-        else:
-            # Backward compat: enabled checkbox alone → count task
-            tasks = ["count"] if bool(payload.get("enabled", True)) else []
-        cur = cam.get("crossing") or {}  # keep the rule when the caller omits it
-        rule = payload.get("zone_rule", cur.get("zone_rule", "body"))
-        if rule not in ("body", "box", "foot"):
-            raise HTTPException(400, "zone_rule must be 'body', 'box' or 'foot'")
-        overlap = float(min(max(float(payload.get("zone_overlap", cur.get("zone_overlap", 0.5))), 0.1), 0.9))
+        tasks = payload.get("tasks", cur.get("tasks", ["count"]))
+        if not isinstance(tasks, list) or any(str(t) not in ZONE_TASKS for t in tasks):
+            raise HTTPException(400, f"tasks must be a list of {list(ZONE_TASKS)}")
+        try:  # zones carry their own tasks / rule / crowd limit; omitted = keep the current ones
+            zones = normalize_zones(payload["zones"] if "zones" in payload else cur.get("zones") or [])
+        except (ValueError, TypeError, KeyError) as exc:
+            raise HTTPException(400, str(exc)) from exc
         crossing = {
-            "enabled": "count" in tasks,
             "mode": mode,
             "points": [norm(p) for p in pts],
             "inward_point": norm(inward) if inward else None,
-            "zone": [norm(p) for p in zone],
-            "tasks": tasks,
-            "zone_rule": rule,
-            "zone_overlap": overlap,
+            "tasks": ["count"] if "count" in tasks else [],  # line mode only
+            "zones": zones,
         }
         return manager.update_camera(cam_id, {"crossing": crossing})["crossing"]
+
+    @app.get("/api/zones/meta")
+    def api_zone_meta():
+        """Zone kinds (id -> default name, overlay colour), tasks and rules, for the editors and dashboards."""
+        return {"kinds": ZONE_KINDS, "colors": ZONE_COLORS, "tasks": list(ZONE_TASKS), "rules": list(ZONE_RULES),
+                "stats": manager.stats_cfg()}
+
+    @app.get("/api/zones")
+    def api_zones():
+        """Live per-zone state of every running camera."""
+        out = []
+        for cam in store.cameras():
+            w = manager.worker(cam["id"])
+            if w is None:
+                continue
+            for z in w.crossing.stats()["zones"]:
+                out.append({"camera_id": cam["id"], "camera_name": cam["name"], **z})
+        return out
+
+    @app.put("/api/stats")
+    def api_update_stats(payload: dict = Body(...)):
+        patch: dict = {}
+        if "visitor_min_s" in payload:
+            patch["visitor_min_s"] = float(min(max(float(payload["visitor_min_s"]), 1.0), 3600.0))
+        if "heat_grid" in payload:
+            cols, rows = (int(v) for v in payload["heat_grid"])
+            patch["heat_grid"] = [int(min(max(cols, 8), 160)), int(min(max(rows, 6), 90))]
+        manager.update_section("stats", patch)
+        return manager.stats_cfg()
+
+    @app.get("/api/heatmap")
+    def api_heatmap(
+        camera_id: str,
+        date_from: float | None = Query(None, alias="from"),
+        date_to: float | None = Query(None, alias="to"),
+    ):
+        """Seconds people stood in each grid cell (row-major, rows x cols over the frame); max for scaling."""
+        _camera_or_404(camera_id)
+        return manager.heatmap(camera_id, date_from, date_to) or {"cols": 0, "rows": 0, "grid": [], "max": 0}
 
     @app.post("/api/cameras/{cam_id}/crossing/reset")
     def api_reset_crossing(cam_id: str):
@@ -305,6 +324,26 @@ def create_app(device: str | None = None) -> FastAPI:
         date_to: float | None = Query(None, alias="to"),
     ):
         return manager.db.hourly(camera_id=camera_id or None, **_range(date_from, date_to))
+
+    @app.get("/api/db/zones")
+    def api_db_zones(
+        camera_id: str | None = None,
+        date_from: float | None = Query(None, alias="from"),
+        date_to: float | None = Query(None, alias="to"),
+    ):
+        return manager.db.zone_summary(camera_id=camera_id or None, visitor_min_s=manager.stats_cfg()["visitor_min_s"],
+                                       **_range(date_from, date_to))
+
+    @app.get("/api/db/visitors")
+    def api_db_visitors(
+        camera_id: str | None = None,
+        zone_id: str | None = None,
+        date_from: float | None = Query(None, alias="from"),
+        date_to: float | None = Query(None, alias="to"),
+    ):
+        return manager.db.visitors_hourly(camera_id=camera_id or None, zone_id=zone_id or None,
+                                          visitor_min_s=manager.stats_cfg()["visitor_min_s"],
+                                          **_range(date_from, date_to))
 
     @app.get("/api/db/top_items")
     def api_db_top_items(

@@ -18,6 +18,7 @@ ws://<IP-máy-Vision-Expo>:8000/ws?topics=status,people,events&cameras=camera_1,
 |---|---|---|
 | `topics` | không | Các chủ đề muốn nhận, cách nhau dấu phẩy: `status`, `people`, `events`, `tracks`. Bỏ trống = mặc định của server (thường `status,events`). **Màn hình hiển thị người / PPE cần `people`.** |
 | `cameras` | không | Chỉ nhận dữ liệu của các camera này (id, cách nhau dấu phẩy). Bỏ trống = mọi camera |
+| `inside` | không | `1` = topic `people` chỉ gửi người **trong vùng Booth area** (`in_zone = true`); màn hình 3D `/show/` dùng tham số này. Không đặt = gửi mọi người |
 | `token` | khi server có đặt | Token đặt ở trang `/socket` của dashboard. Sai token → server đóng kết nối mã `1008` |
 
 Máy Vision Expo phải chạy với `--host 0.0.0.0` (bản Docker đã mặc định) và mở cổng 8000 trên firewall. Danh sách camera id: xem message `hello`, hoặc trang Cameras của dashboard.
@@ -78,7 +79,12 @@ Tần suất chỉnh ở trang `/socket` (0–30 lần/giây, 0 = tắt). Vị t
  "ppe_required":["hardhat","gloves"],
  "cameras":[{"id":"camera_1","name":"Cổng chính","status":"running","fps":14.9,
              "persons":3,"inside":2,"outside":1,"mode":"zone","entries":42,"exits":38,
-             "ppe":{"NO-Hardhat":1,"Hardhat":1,"Gloves":3,"NO-Gloves":1},"ppe_alerts":1}]}
+             "ppe":{"NO-Hardhat":1,"Hardhat":1,"Gloves":3,"NO-Gloves":1},"ppe_alerts":1,
+             "zones":[{"id":"z1","kind":"booth","name":"Booth area","color":"#c800ff","points":[{"x":0.1,"y":0.2},...],
+                       "tasks":["count"],"inside":2,"entries":42,"exits":38,"dwell_avg_s":75.3,"dwell_max_s":140.0,
+                       "crowd_max":0,"crowded":false,"crowd_since":null},
+                      {"id":"z2","kind":"game_3d","name":"3D Box Game","tasks":["count","ppe"],"inside":1,
+                       "crowd_max":3,"crowded":false, ...}]}]}
 ```
 
 Mỗi camera:
@@ -95,8 +101,23 @@ Mỗi camera:
 | `entries`, `exits` | int | Tổng lượt vào / ra kể từ lần reset bộ đếm gần nhất |
 | `ppe` | object | Số nhãn PPE đang gắn người trong vùng: `{nhãn: số lượng}`. Găng tay tính **theo từng tay** (một người có thể góp 2) |
 | `ppe_alerts` | int | Số người đang thiếu PPE (có ít nhất một nhãn `NO-*`) |
+| `zones` | object[] | Các vùng của camera (chế độ vùng), xem bảng dưới |
 
-`persons − inside − outside` = người vừa xuất hiện, chưa xác định được phía. `totals` là tổng các camera đang chạy (cùng ý nghĩa).
+Mỗi vùng trong `zones`:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `id`, `kind`, `name` | Mã vùng (`z1`…), loại (`booth`, `game_3d`, `monitoring`, `reception`, `other`), tên hiển thị |
+| `color`, `points` | Màu vẽ (`#rrggbb`) và polygon (chuẩn hóa 0–1) |
+| `tasks` | `count` (sự kiện vào/ra), `ppe` (kiểm tra PPE); có thể rỗng: vùng vẫn có số người và thời gian ở lại |
+| `inside` | Số người đang ở trong vùng |
+| `entries`, `exits` | Lượt vào / ra (chỉ vùng có task `count`) |
+| `dwell_avg_s`, `dwell_max_s` | Thời gian ở lại trung bình / lâu nhất của những người đang trong vùng (giây), `null` khi trống |
+| `crowd_max`, `crowded`, `crowd_since` | Ngưỡng đông (0 = tắt), đang đông không, đông từ lúc nào |
+
+Các vùng được phép lồng nhau (game nằm trong booth): một người có thể ở nhiều vùng. `inside` / `outside` của camera là của vùng **Booth area** đầu tiên (không có booth thì vùng đầu tiên).
+
+`persons − inside − outside` = người vừa xuất hiện, chưa xác định được phía. `totals` là tổng các camera đang chạy (cùng ý nghĩa), thêm `zones` (`{loại: {inside, crowded}}`) và `visitors_today` (khách từ 0 giờ hôm nay: người ở trong booth ≥ `stats.visitor_min_s`, mặc định 10 giây).
 `ppe_required` = các loại PPE server đang kiểm tra (`hardhat`, `gloves`; rỗng khi PPE tắt). Một loại có trong danh sách mà người trong vùng chưa có nhãn nào nghĩa là "chưa rõ" (chưa thấy rõ bộ phận đó đủ số lần).
 
 ### 3.3 `people` – từng người và PPE (dữ liệu chính để hiển thị)
@@ -114,7 +135,7 @@ Mỗi camera:
               "conf":0.88,"box":[0.41,0.30,0.52,0.86],"foot":[0.47,0.85]}]}]}
 ```
 
-Chỉ gồm camera đang chạy. Mỗi camera: `id`, `frame_size` (`[rộng, cao]` pixel của khung gốc), `people` (có thể rỗng).
+Chỉ gồm camera đang chạy. Mỗi camera: `id`, `frame_size` (`[rộng, cao]` pixel của khung gốc), `zone` (camera đang có vùng polygon), `people` (có thể rỗng).
 
 Mỗi người:
 
@@ -122,6 +143,8 @@ Mỗi người:
 |---|---|---|
 | `track_id` | int \| null | Mã theo dõi, giữ nguyên khi người đó còn trong khung. Duy nhất **trong một camera**, không liên kết giữa các camera; có thể đổi khi bị che khuất lâu; đánh lại từ đầu khi server khởi động lại. `null` hiếm gặp (chưa kịp gán) |
 | `side` | string | `"in"` (trong vùng), `"out"` (ngoài vùng), `"unknown"` (chưa xác định / camera chưa vẽ line-vùng) |
+| `in_zone` | bool | Đang ở trong một vùng **Booth area**. Luôn `false` nếu camera không có vùng booth. Client kết nối với `inside=1` chỉ nhận người có `in_zone = true` |
+| `zones` | object[] | Các vùng người này đang ở: `[{"id","kind","name","dwell_s"}]`, `dwell_s` = số giây của lượt ở hiện tại |
 | `ppe_zone` | bool | Đang được kiểm tra PPE: chân trong vùng, hoặc thân trong vùng, hoặc vừa ra khỏi vùng dưới 2 giây |
 | `ppe_alert` | bool | Đang thiếu PPE (có nhãn `NO-Hardhat` / `NO-Gloves`) |
 | `ppe` | object[] | Kết quả PPE của người này (bảng dưới; rỗng khi không ở vùng có task `ppe`) |
@@ -160,6 +183,7 @@ Mọi sự kiện có `type`, `ts`, `camera_id`.
 | `direction` | `"in"` hoặc `"out"` |
 | `mode` | `"line"` (qua đoạn thẳng) hoặc `"zone"` (vào/ra polygon) |
 | `dwell_s` | Chỉ có khi ra khỏi vùng: số giây đã ở trong vùng |
+| `zone_id`, `zone_kind`, `zone_name` | Vùng của sự kiện (chế độ vùng; mỗi vùng có task `count` sinh sự kiện riêng) |
 
 Người đã đứng sẵn trong vùng lúc xuất hiện (mới khởi động, hoặc bị đổi `track_id`) được tính là đang ở trong (`side = "in"`) nhưng không phát sinh sự kiện vào.
 
@@ -171,6 +195,16 @@ Người đã đứng sẵn trong vùng lúc xuất hiện (mới khởi động
 ```
 
 Chỉ khi vùng polygon bật task `ppe`. `items` = các nhãn âm hiện có (`NO-Hardhat`, `NO-Gloves`); `all_items` = mọi nhãn PPE đang gắn người đó. Lặp tối đa khoảng **8 giây một lần** cho cùng tổ hợp / người. Trạng thái tức thời: `people[].ppe_alert` và `people[].ppe`.
+
+**`crowd` – vùng đông người**
+
+```json
+{"type":"crowd","ts":1791877500.0,"camera_id":"camera_1","state":"start","inside":4,"max":3,
+ "zone_id":"z2","zone_kind":"game_3d","zone_name":"3D Box Game"}
+{"type":"crowd","ts":1791877620.0,"camera_id":"camera_1","state":"end","inside":2,"max":3,"peak":5,"duration_s":120.0, ...}
+```
+
+`start` khi vùng có hơn `crowd_max` người liên tục `crowd_s` giây; `end` khi số người giữ ≤ `crowd_max` liên tục 5 giây (không nhấp nháy). Chỉ vùng đặt `crowd_max > 0`.
 
 **`camera` – camera đổi trạng thái**
 
@@ -193,7 +227,9 @@ Gửi khi một người không còn thấy trong 3 giây. Lượt quá ngắn (
 ```json
 {"type":"track","ts":1791877312.4,"camera_id":"camera_1","track_id":27,
  "first_ts":1791877300.0,"last_ts":1791877312.4,"duration":12.4,"frames":180,
- "items":{"NO-Hardhat":120,"Gloves":64},"alert":true,"first_side":"out","last_side":"in"}
+ "items":{"NO-Hardhat":120,"Gloves":64},"alert":true,"first_side":"out","last_side":"in",
+ "zones":{"z1":{"kind":"booth","name":"Booth area","seconds":11.8},"z2":{"kind":"game_3d","name":"3D Box Game","seconds":6.1}},
+ "visitor":true}
 ```
 
 | Trường | Ý nghĩa |
@@ -203,6 +239,8 @@ Gửi khi một người không còn thấy trong 3 giây. Lượt quá ngắn (
 | `items` | `{nhãn PPE: số khung có nhãn đó}`, chỉ nhãn thấy ≥ 3 khung |
 | `alert` | Có lúc nào thiếu PPE (`NO-*`) |
 | `first_side`, `last_side` | Phía lúc đầu / lúc cuối (`in`, `out` hoặc `null`) |
+| `zones` | `{zone_id: {kind, name, seconds}}`: tổng số giây người này ở trong từng vùng |
+| `visitor` | `true` = khách thật (ở booth ≥ `visitor_min_s`; camera không có booth thì xét mọi vùng), `null` khi camera không có vùng |
 
 ### 3.6 Trả lời lệnh của client
 
@@ -251,6 +289,10 @@ Cùng host/cổng, trả JSON (không cần token).
 | `GET /api/db/tracks?from=&to=&camera_id=&item=&alert_only=` | Lượt người đã lưu |
 | `GET /api/db/hourly`, `GET /api/db/top_items` | Thống kê theo giờ, nhãn PPE theo lượt người |
 | `GET /api/ppe` | Cấu hình + trạng thái model PPE (`required`, `status`, `last_infer_ms`…) |
+| `GET /api/zones`, `GET /api/zones/meta` | Trạng thái từng vùng lúc này; danh sách loại vùng, màu, `stats` (`visitor_min_s`) |
+| `GET /api/db/zones?from=&to=&camera_id=` | Theo vùng: khách, lượt ghé, thời gian ở lại TB / trung vị, vào/ra, đỉnh số người, số lần đông |
+| `GET /api/db/visitors?from=&to=&camera_id=&zone_id=` | Khách theo giờ (booth, hoặc một vùng) |
+| `GET /api/heatmap?camera_id=&from=&to=` | Heatmap vị trí đứng: `{cols, rows, grid, max}`, `grid` = số giây người đứng ở từng ô (theo hàng, phủ cả khung camera) |
 
 **Video cho app hiển thị:** muốn tự vẽ khung lên video, lấy video trực tiếp từ camera (RTSP) rồi vẽ `people[].box` / `people[].ppe[].box`. Dữ liệu trễ hơn hình khoảng 100–300 ms tuỳ máy. Muốn đơn giản thì nhúng `stream.mjpg` (đã vẽ sẵn).
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 from .db import Database
 from .events import EventHub
@@ -33,7 +34,13 @@ class CameraManager:
         self.person_weights = resolve_model(store.get("person_model"))
         self.ppe = PpeService(store.get("ppe") or {}, device=self.device)
         self.hub = EventHub()
-        self.db = Database(DATABASE_FILE, cfg_getter=lambda: store.get("database") or {}, status_getter=self.status)
+        self.db = Database(
+            DATABASE_FILE,
+            cfg_getter=lambda: store.get("database") or {},
+            status_getter=self.status,
+            heat_getter=self._take_heat,
+        )
+        self._visitors_cache: tuple[float, int] = (0.0, 0)
         self.hub.subscribe(self.db.on_event)
         self.workers: dict[str, CameraWorker] = {}
         self._lock = threading.RLock()
@@ -51,16 +58,17 @@ class CameraManager:
             self.workers.clear()
         self.db.stop()
 
-    def _initial_counts(self, cam_id: str, old: CameraWorker | None) -> tuple[int, int]:
+    def _initial_counts(self, cam_id: str, old: CameraWorker | None) -> dict:
+        """{zone_id | "_line" | None: (entries, exits)} since the last reset (see CrossingCounter.restore_counts)."""
         if old is not None:
-            return old.crossing.entries, old.crossing.exits
+            return old.crossing.count_state()
         db_cfg = self.store.get("database") or {}
         if db_cfg.get("enabled", True) and db_cfg.get("restore_counts", True):
             try:
                 return self.db.counts_since_reset(cam_id)
             except Exception as exc:  # noqa: BLE001
                 print(f"[manager] cannot restore counts for {cam_id}: {exc}")
-        return 0, 0
+        return {}
 
     def _start_worker(self, cam: dict) -> None:
         with self._lock:
@@ -74,6 +82,7 @@ class CameraManager:
                 ppe=self.ppe,
                 hub=self.hub,
                 initial_counts=self._initial_counts(cam["id"], old),
+                stats_cfg=lambda: self.store.get("stats") or {},
             )
             self.workers[cam["id"]] = w
             w.start()
@@ -132,6 +141,45 @@ class CameraManager:
         self.ppe.update_config(data["ppe"])
         return data["ppe"]
 
+    # ---------- zones / heatmap ----------
+    def _take_heat(self) -> dict:
+        with self._lock:
+            workers = list(self.workers.items())
+        return {cid: w.take_heat() for cid, w in workers}
+
+    def stats_cfg(self) -> dict:
+        return {"visitor_min_s": 10, **(self.store.get("stats") or {})}
+
+    def visitors_today(self) -> int:
+        """Visitors (tracks flagged visitor) since local midnight; cached 30 s since status() runs often."""
+        now = time.time()
+        ts, n = self._visitors_cache
+        if now - ts < 30.0:
+            return n
+        lt = time.localtime(now)
+        midnight = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+        try:
+            n = sum(r["visitors"] for r in self.db.visitors_hourly(ts_from=midnight))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[manager] visitors_today: {exc}")
+        self._visitors_cache = (now, n)
+        return n
+
+    def heatmap(self, cam_id: str, ts_from=None, ts_to=None) -> dict | None:
+        """Stored hours in range + what the worker has not handed to the database yet (when the range is open)."""
+        h = self.db.heatmap(camera_id=cam_id, ts_from=ts_from, ts_to=ts_to)
+        w = self.worker(cam_id)
+        live = w.heat_snapshot() if w is not None and (ts_to is None or ts_to > time.time()) else None
+        if live is not None:
+            rows, cols = live.shape
+            if h is None or (h["cols"], h["rows"]) != (cols, rows):
+                h = h or {"cols": cols, "rows": rows, "grid": [0.0] * (cols * rows)}
+            if (h["cols"], h["rows"]) == (cols, rows):
+                h["grid"] = [a + float(b) for a, b in zip(h["grid"], live.ravel())]
+        if h is not None:
+            h["max"] = max(h["grid"]) if h["grid"] else 0
+        return h
+
     # ---------- status ----------
     def status(self) -> dict:
         cams = []
@@ -152,6 +200,11 @@ class CameraManager:
             totals["inside"] += s["crossing"].get("inside") or 0
             totals["outside"] += s["crossing"].get("outside") or 0
             totals["ppe_alerts"] += s.get("ppe_alerts", 0)
+            for z in s["crossing"].get("zones") or []:
+                k = totals.setdefault("zones", {}).setdefault(z["kind"], {"inside": 0, "crowded": 0})
+                k["inside"] += z["inside"]
+                k["crowded"] += bool(z["crowded"])
+        totals["visitors_today"] = self.visitors_today()
         return {
             "cameras": cams,
             "totals": totals,

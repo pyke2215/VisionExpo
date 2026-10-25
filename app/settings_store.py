@@ -10,8 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .paths import MASK_MODEL_DEFAULT, PERSON_MODEL_DEFAULT, PPE_MODEL_DEFAULT, SETTINGS_FILE
-
-ZONE_TASKS = ("count", "ppe")
+from .zones import ZONE_TASKS, migrate_single_zone, normalize_zones
 
 CAMERA_DEFAULTS: dict[str, Any] = {
     "name": "",
@@ -30,10 +29,8 @@ CAMERA_DEFAULTS: dict[str, Any] = {
         "mode": "line",
         "points": [],
         "inward_point": None,
-        "zone": [],
-        "tasks": ["count"],  # zone: "count" = vào/ra, "ppe" = Hardhat/Gloves trong vùng
-        "zone_rule": "body",  # zone: "body" = phần lớn thân dưới trong vùng, "box" = phần lớn cả người, "foot" = điểm chân
-        "zone_overlap": 0.5,  # body / box rule: share of the judged box part that must lie inside
+        "tasks": ["count"],  # line mode: "count" = vào/ra qua line
+        "zones": [],  # zone mode: typed polygons, each with its own tasks / rule / crowd limit (app/zones.py)
     },
 }
 
@@ -60,6 +57,10 @@ GLOBAL_DEFAULTS: dict[str, Any] = {
         "people_hz": 5.0,
         "default_topics": ["status", "events"],
         "token": "",
+    },
+    "stats": {
+        "visitor_min_s": 10,  # a visitor = a person who spent at least this long in a booth zone
+        "heat_grid": [64, 36],  # heatmap cells (cols, rows) over the camera frame
     },
     "database": {
         "enabled": True,
@@ -111,11 +112,19 @@ def normalize_camera(cam: dict) -> dict:
     merged["stream_width"] = int(min(max(int(merged["stream_width"]), 320), 3840))
     merged["jpeg_quality"] = int(min(max(int(merged["jpeg_quality"]), 30), 95))
     cr = merged.setdefault("crossing", {})
+    legacy_zones = migrate_single_zone(cr) if not cr.get("zones") else []  # one old polygon -> "Booth area"
     tasks = normalize_crossing_tasks(cr)
-    cr["tasks"] = tasks
-    cr["enabled"] = "count" in tasks  # backward-compatible flag for counting
-    cr["zone_rule"] = cr.get("zone_rule") if cr.get("zone_rule") in ("foot", "box") else "body"
-    cr["zone_overlap"] = float(min(max(float(cr.get("zone_overlap", 0.5)), 0.1), 0.9))
+    try:
+        zones = normalize_zones(cr.get("zones") or legacy_zones)
+    except ValueError as exc:
+        print(f"[settings] camera {merged['id']}: dropping invalid zones ({exc})")
+        zones = []
+    for key in ("zone", "zone_rule", "zone_overlap"):
+        cr.pop(key, None)
+    cr["zones"] = zones
+    cr["tasks"] = [t for t in tasks if t == "count"]  # line mode only; zones carry their own tasks
+    zone_mode = cr.get("mode") == "zone"
+    cr["enabled"] = any("count" in z["tasks"] for z in zones) if zone_mode else "count" in cr["tasks"]
     return merged
 
 

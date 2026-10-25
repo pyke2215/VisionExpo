@@ -99,3 +99,30 @@ function fmtBytes(n) {
   while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
   return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
 }
+
+// Heat grid {cols, rows, grid (row-major seconds), max} drawn over a w x h canvas: transparent where nobody stood,
+// blue -> yellow -> red with density (square-root scale so a few busy spots do not hide the rest).
+function drawHeat(canvas, heat, w, h) {
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  if (!heat || !heat.max || !heat.cols) return;
+  const cw = w / heat.cols, ch = h / heat.rows;
+  for (let r = 0; r < heat.rows; r++) {
+    for (let c = 0; c < heat.cols; c++) {
+      const v = heat.grid[r * heat.cols + c];
+      if (!v) continue;
+      const t = Math.sqrt(v / heat.max);
+      const hue = 240 - 240 * t; // 240 blue .. 0 red
+      ctx.fillStyle = `hsla(${hue}, 100%, 50%, ${0.25 + 0.5 * t})`;
+      ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
+    }
+  }
+}
+
+function localMidnight() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() / 1000;
+}

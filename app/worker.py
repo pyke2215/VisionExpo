@@ -1,16 +1,18 @@
-"""One thread per camera: latest frame, person tracking, crossing count, PPE in zones, overlay, JPEG."""
+"""One thread per camera: latest frame, person tracking, zones / crossing, PPE in zones, heatmap, overlay, JPEG."""
 
 from __future__ import annotations
 
 import threading
 import time
 from collections import Counter
+from typing import Callable
 
 import cv2
 import numpy as np
 
 from .capture import FrameReader
 from .crossing import CrossingCounter
+from .zones import DASHBOARD_KIND
 from .draw import render
 from .events import EventHub
 from .person import Person, PersonTracker
@@ -24,6 +26,9 @@ MIN_TRACK_FRAMES = 5  # shorter tracks are flicker, not visitors
 MIN_ITEM_FRAMES = 3  # a PPE label must be shown this many frames to count in the summary
 PPE_ALERT_REPEAT_S = 8.0
 PPE_ZONE_GRACE_S = 2.0  # a person leaving the PPE zone stays checked this long (border jitter)
+HEAT_EVERY_S = 1.0  # a track adds its foot point to the heatmap at most once a second (time, not fps, weighted)
+MAX_ZONE_DT_S = 1.0  # a frame gap longer than this (stall, reconnect) does not count as time spent in a zone
+DEFAULT_STATS = {"visitor_min_s": 10, "heat_grid": [64, 36]}
 STATE_OF_STATUS = {"running": "online", "offline": "offline", "error": "error", "reconnecting": "reconnecting"}
 
 
@@ -44,7 +49,8 @@ class CameraWorker:
         device: str,
         ppe: PpeService | None = None,
         hub: EventHub | None = None,
-        initial_counts: tuple[int, int] = (0, 0),
+        initial_counts: dict | None = None,
+        stats_cfg: Callable[[], dict] | None = None,
     ) -> None:
         self.cfg = dict(cfg)
         self.id = cfg["id"]
@@ -53,7 +59,8 @@ class CameraWorker:
         self.ppe_svc = ppe
         self.hub = hub
         self.crossing = CrossingCounter(cfg.get("crossing"))
-        self.crossing.entries, self.crossing.exits = initial_counts
+        self.crossing.restore_counts(initial_counts or {})
+        self._stats_cfg = stats_cfg or (lambda: {})
         self._tracks: dict[int, dict] = {}
         self._ppe_alerted: dict[tuple[int, str], float] = {}
         self._cam_state: str | None = None
@@ -76,6 +83,9 @@ class CameraWorker:
         self._ppe_evidence: dict[int, PpeEvidence] = {}
         self._ppe_zone_until: dict[int, float] = {}
         self._ppe_tick = 0
+        self._heat_lock = threading.Lock()
+        self._heat: np.ndarray | None = None  # (rows, cols) foot-point seconds not yet taken by the database
+        self._heat_last: dict[int, float] = {}
 
     # ---------- lifecycle ----------
     def start(self) -> None:
@@ -108,6 +118,7 @@ class CameraWorker:
 
     def stats(self) -> dict:
         persons = self.persons
+        now = time.time()
         return {
             "id": self.id,
             "name": self.cfg.get("name", self.id),
@@ -124,6 +135,7 @@ class CameraWorker:
                     "side": p.side,
                     "ppe_alert": p.ppe_alert,
                     "ppe": sorted({f.label for f in p.ppe}),
+                    "zones": self._zones_of(p, now),
                 }
                 for p in persons
             ],
@@ -131,6 +143,16 @@ class CameraWorker:
             "ppe_alerts": sum(1 for p in persons if p.ppe_alert),
             "crossing": self.crossing.stats(),
         }
+
+    def _stat(self, key: str):
+        return (self._stats_cfg() or {}).get(key, DEFAULT_STATS[key])
+
+    def _zones_of(self, p: Person, now: float) -> list[dict]:
+        meta = {z.id: z for z in self.crossing.zones}
+        return [
+            {"id": zid, "kind": meta[zid].kind, "name": meta[zid].name, "dwell_s": round(now - since, 1)}
+            for zid, since in p.zones.items() if zid in meta
+        ]
 
     def people_detail(self) -> dict:
         """People with boxes / foot points normalized to 0..1 (for WebSocket clients)."""
@@ -149,12 +171,18 @@ class CameraWorker:
                 "inferred": f.inferred,
                 "box": norm(f.box),
             })
+        # in_zone: inside a "booth" zone, the people the 3D show dashboard displays (WebSocket inside=1).
+        # A camera without a booth zone (line mode, no zones, only other kinds) puts nobody there.
+        booth = {z.id for z in self.crossing.dashboard_zones}
+        now = time.time()
         people = []
         for p in self.persons:
             fx, fy = p.foot_point()
             people.append({
                 "track_id": p.track_id,
                 "side": p.side,
+                "in_zone": bool(booth.intersection(p.zones)),
+                "zones": self._zones_of(p, now),
                 "ppe_zone": p.ppe_zone,
                 "ppe_alert": p.ppe_alert,
                 "ppe": ppe_by_owner.get(p.track_id, []) if p.track_id is not None else [],
@@ -162,7 +190,34 @@ class CameraWorker:
                 "box": norm(p.box),
                 "foot": [round(fx / w, 4), round(fy / h, 4)],
             })
-        return {"id": self.id, "frame_size": list(size), "people": people}
+        return {"id": self.id, "frame_size": list(size), "zone": bool(booth), "people": people}
+
+    # ---------- heatmap ----------
+    def _add_heat(self, persons: list[Person], w: int, h: int, now: float) -> None:
+        cols, rows = (int(v) for v in self._stat("heat_grid"))
+        with self._heat_lock:
+            if self._heat is None or self._heat.shape != (rows, cols):
+                self._heat = np.zeros((rows, cols), np.float32)
+            for p in persons:
+                tid = p.track_id
+                t = self._tracks.get(tid) if tid is not None else None
+                if t is None or t["frames"] < MIN_TRACK_FRAMES or now - self._heat_last.get(tid, 0.0) < HEAT_EVERY_S:
+                    continue
+                self._heat_last[tid] = now
+                fx, fy = p.foot_point()
+                c = int(min(max(fx / max(w, 1), 0.0), 0.999) * cols)
+                r = int(min(max(fy / max(h, 1), 0.0), 0.999) * rows)
+                self._heat[r, c] += HEAT_EVERY_S
+
+    def take_heat(self) -> np.ndarray | None:
+        """Grid accumulated since the last call (the database adds it to the current hour) and reset it."""
+        with self._heat_lock:
+            grid, self._heat = self._heat, None
+        return grid if grid is not None and grid.any() else None
+
+    def heat_snapshot(self) -> np.ndarray | None:
+        with self._heat_lock:
+            return None if self._heat is None else self._heat.copy()
 
     # ---------- events ----------
     def _emit(self, event: dict) -> None:
@@ -187,8 +242,11 @@ class CameraWorker:
             if t is None:
                 t = self._tracks[tid] = {
                     "first": now, "last": now, "frames": 0, "items": Counter(),
-                    "alert": False, "first_side": None, "last_side": None,
+                    "alert": False, "first_side": None, "last_side": None, "zones": {},
                 }
+            dt = min(now - t["last"], MAX_ZONE_DT_S)
+            for zid in p.zones:
+                t["zones"][zid] = t["zones"].get(zid, 0.0) + dt
             t["last"] = now
             t["frames"] += 1
             t["items"].update({f.label for f in p.ppe})  # summary "items" = PPE labels seen on this person
@@ -209,8 +267,18 @@ class CameraWorker:
             self._ppe_alerted.pop(key, None)
         self._ppe_evidence.pop(tid, None)
         self._ppe_zone_until.pop(tid, None)
+        self._heat_last.pop(tid, None)
         if t is None or t["frames"] < MIN_TRACK_FRAMES:
             return
+        meta = {z.id: z for z in self.crossing.zones}
+        zones = {
+            zid: {"kind": meta[zid].kind, "name": meta[zid].name, "seconds": round(sec, 1)}
+            for zid, sec in t["zones"].items() if zid in meta and sec > 0
+        }
+        # visitor: spent at least visitor_min_s in the booth (any zone when the camera has no booth zone)
+        booth_only = bool(self.crossing.dashboard_zones)
+        ref = [v["seconds"] for v in zones.values() if not booth_only or v["kind"] == DASHBOARD_KIND]
+        visitor = (bool(ref) and max(ref) >= float(self._stat("visitor_min_s"))) if self.crossing.zones else None
         self._emit({
             "type": "track",
             "ts": t["last"],
@@ -223,6 +291,8 @@ class CameraWorker:
             "alert": t["alert"],
             "first_side": t["first_side"],
             "last_side": t["last_side"],
+            "zones": zones,
+            "visitor": visitor,
         })
 
     def reset_counts(self) -> None:
@@ -294,14 +364,10 @@ class CameraWorker:
                 self.fps = 0.85 * self.fps + 0.15 * (1.0 / dt) if self.fps else 1.0 / dt
 
     def _ppe_in_zone(self, cx: float, cy: float, w: int, h: int) -> bool:
-        zone = self.crossing.zone_px(w, h)
-        if not zone:
-            return False
-        poly = np.array(zone, dtype=np.float32).reshape(-1, 1, 2)
-        return cv2.pointPolygonTest(poly, (float(cx), float(cy)), False) >= 0
+        return any(z.contains(cx, cy, w, h) for z in self.crossing.ppe_zones)
 
     def _person_in_ppe_zone(self, p: Person, w: int, h: int) -> bool:
-        """Foot side == in, or body center inside the polygon (feet hidden / beyond a floor-drawn edge).
+        """In a zone with the ppe task, or body center inside one (feet hidden / beyond a floor-drawn edge).
 
         Stays true PPE_ZONE_GRACE_S after the last inside frame: turning or bending makes the foot point
         jitter across the border, and PPE must not drop (and lose its state) on every flicker.
@@ -310,7 +376,8 @@ class CameraWorker:
             return False
         now = time.time()
         x1, y1, x2, y2 = p.box
-        if p.side == "in" or self._ppe_in_zone((x1 + x2) / 2.0, (y1 + y2) / 2.0, w, h):
+        in_ppe_zone = any(z.id in p.zones for z in self.crossing.ppe_zones)
+        if in_ppe_zone or self._ppe_in_zone((x1 + x2) / 2.0, (y1 + y2) / 2.0, w, h):
             self._ppe_zone_until[p.track_id] = now + PPE_ZONE_GRACE_S
             return True
         return now < self._ppe_zone_until.get(p.track_id, 0.0)
@@ -477,7 +544,7 @@ class CameraWorker:
                 return
             persons = self.tracker.track(frame, conf=float(cfg["conf"]), imgsz=int(cfg["imgsz"]))
             for ev in self.crossing.update(persons, w, h):
-                self._emit({"type": "crossing", **ev})
+                self._emit(dict(ev))
 
         ppe_findings = self._ppe_model
         ppe_on = (
@@ -517,13 +584,15 @@ class CameraWorker:
         self.status = "running"
         now = time.time()
         self._update_tracks(persons, now)
+        self._add_heat(persons, w, h, now)
         if ppe_on:
             self._emit_ppe_alerts(persons, now)
 
         zone_mode = self.crossing.mode == "zone"
         draw_geom = self.crossing.active
         line_px = self.crossing.line_px(w, h) if draw_geom and not zone_mode else None
-        zone_px = self.crossing.zone_px(w, h) if draw_geom and zone_mode else None
+        zones_px = [(z.kind, f"{z.name} {z.inside}" + (" FULL" if z.crowded else ""), pts)
+                    for z, pts in self.crossing.zones_px(w, h)]
         inward = (cfg.get("crossing") or {}).get("inward_point")
         inward_px = (float(inward["x"]) * w, float(inward["y"]) * h) if isinstance(inward, dict) else None
         cs = self.crossing.stats()
@@ -531,6 +600,8 @@ class CameraWorker:
         if self.crossing.active:
             tasks = ",".join(self.crossing.tasks()) or "-"
             hud.append(f"INSIDE {cs['inside']}   OUTSIDE {cs['outside']}   tasks {tasks}")
+            if len(cs["zones"]) > 1:
+                hud.append("   ".join(f"{z['name']} {z['inside']}" for z in cs["zones"]))
         if ppe_on:
             n_owned = sum(1 for f in ppe_findings if f.owner is not None)
             n_neg = sum(1 for f in ppe_findings if f.alert)
@@ -547,7 +618,7 @@ class CameraWorker:
             persons=persons,
             line_px=line_px,
             inward_px=inward_px,
-            zone_px=zone_px,
+            zones=zones_px,
             hud=hud,
             show_skeleton=bool(cfg.get("show_skeleton", True)),
             show_boxes=bool(cfg.get("show_boxes", True)),

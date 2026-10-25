@@ -6,7 +6,7 @@ Dashboard mở tại `http://127.0.0.1:8000/` (máy khác trong LAN: `http://<IP
 |---|---|---|
 | Live | `/` | Xem camera trực tiếp, số người, trạng thái PPE |
 | Cameras | `/cameras` | Thêm / sửa / tắt / xóa camera |
-| Line / Task | `/calibrate` | Vẽ line hoặc vùng; chọn task đếm vào/ra và/hoặc PPE trong vùng |
+| Line / Task | `/calibrate` | Vẽ line hoặc nhiều vùng (Booth area, 3D Box Game, Camera Monitoring, Reception…); mỗi vùng có task riêng |
 | PPE | `/ppe` | Bật kiểm tra mũ bảo hộ / găng tay, chọn loại cần kiểm tra, ngưỡng, bật task PPE cho camera |
 | Dữ liệu | `/data` | Lịch sử, biểu đồ, xuất CSV, cấu hình lưu trữ |
 | Socket | `/socket` | Cấu hình WebSocket gửi dữ liệu cho app khác, theo dõi client |
@@ -22,7 +22,7 @@ Nhận diện đồ vật (trang Đồ vật cũ) đang gỡ tạm.
 ## Lần đầu sử dụng
 
 1. **Cameras** → thêm từng camera, bấm **Kiểm tra** thấy ảnh rồi **Thêm**.
-2. **Line / Task** → chọn camera, vẽ vùng (hoặc line), chọn task đếm/PPE nếu cần, **Lưu**.
+2. **Line / Task** → chọn camera, thêm vùng **Booth area** (vùng lớn nhất) rồi các khu bên trong, chọn task từng vùng, **Lưu**.
 3. **PPE** → kiểm tra trạng thái "Sẵn sàng", tick camera cần kiểm tra PPE.
 4. **Live** → kiểm tra số người, khung, nhãn PPE.
 5. (Nếu có app hiển thị) **Socket** → đặt token, gửi URL cho bên làm app.
@@ -38,6 +38,7 @@ Nhận diện đồ vật (trang Đồ vật cũ) đang gỡ tạm.
 | Đang thấy | Số người đang có trong khung hình lúc này |
 | Trong vùng | Số người đang đứng trong vùng (chế độ line: ở phía "trong") |
 | Ngoài vùng | Số người đang ở ngoài vùng |
+| Khách hôm nay | Số người đã ở trong Booth area ≥ N giây từ 0 giờ hôm nay (N đặt ở trang Dữ liệu, mặc định 10) |
 | Thiếu PPE | Số người trong vùng PPE đang thiếu mũ hoặc găng, ô nhấp nháy đỏ khi > 0 |
 
 Người vừa xuất hiện ngay trên mép vùng chưa được tính vào trong hay ngoài, nên "Trong" + "Ngoài" có thể nhỏ hơn "Đang thấy" một chút.
@@ -107,16 +108,18 @@ Chọn camera ở ô trên cùng, chọn chế độ:
 
 ### Chế độ Vùng (polygon) – khuyên dùng
 
-Dùng khi muốn biết người đang **ở trong một khu vực** (khu trưng bày, quầy, sân khấu), và/hoặc kiểm tra PPE trong vùng đó.
+Một camera có tối đa 12 vùng, mỗi vùng chọn **loại**: **Booth area** (vùng lớn nhất; chỉ người ở trong mới được gửi sang màn hình 3D), **3D Box Game**, **Camera Monitoring**, **Reception** hoặc **Khu vực khác**. Tên hiển thị sửa được. Các vùng được phép lồng nhau (khu game nằm trong booth): một người có thể ở nhiều vùng cùng lúc. Mọi vùng đều có **số người** và **thời gian ở lại**, kể cả khi không bật task nào.
 
-1. Click lần lượt các góc của vùng trên ảnh (ít nhất 3 điểm, tối đa 32).
-2. Chỉnh: **kéo** điểm để di chuyển, **click lên cạnh** để chèn thêm điểm, **chuột phải** vào điểm để xóa.
-3. Chọn task: **Đếm vào/ra** và/hoặc **PPE (mũ + găng)**.
-4. **Lưu**.
+1. Chọn loại ở ô dưới danh sách, bấm **+ Thêm vùng**.
+2. Click lần lượt các góc của vùng đang chọn trên ảnh (ít nhất 3 điểm, tối đa 32). Chỉnh: **kéo** điểm, **click lên cạnh** để chèn điểm, **chuột phải** vào điểm để xóa. Click gần đỉnh của vùng khác để chuyển sang sửa vùng đó (hoặc chọn trong danh sách).
+3. Thuộc tính vùng đang chọn: tên, loại, task **Đếm vào/ra** (sự kiện VÀO / RA kèm thời gian ở lại), **PPE** (kiểm tra mũ + găng trong vùng này), quy tắc tính TRONG vùng, **cảnh báo đông** (hơn N người trong T giây; 0 = tắt).
+4. **Lưu** (lưu mọi vùng cùng lúc). **Vẽ lại vùng này** xóa điểm của vùng đang chọn, **Xóa vùng** bỏ hẳn vùng đó.
+
+Trên video chỉ vẽ **viền** từng vùng theo màu loại (không tô), kèm tên và số người. Camera cũ có một vùng được tự chuyển thành vùng Booth area với task cũ.
 
 Mục **Tính là TRONG vùng khi** chọn cách xét: *phần lớn thân dưới nằm trong vùng* (mặc định: ≥ N% của 40% dưới khung người nằm trong vùng; hợp với người ngồi, bị khung hình cắt chân, hoặc chỉ thò một phần ra ngoài) *phần lớn cả người nằm trong vùng* (≥ N% khung người; hợp khi vùng phủ gần hết khung hình, không chỉ sàn) hoặc *điểm chân nằm trong vùng* (giữa hai mắt cá; chính xác hơn khi luôn thấy rõ chân). Đi từ ngoài vào trong vùng = một lượt VÀO (nếu bật đếm), ra ngoài = một lượt RA (kèm thời gian đã ở trong).
 
-**PPE:** model `yolo_ppe.pt` nhận `Hardhat` / `NO-Hardhat` / `Gloves` / `NO-Gloves` trên người đang **trong vùng**. Dương và âm đều hiện trên Live; chỉ `NO-*` tô đỏ và gửi sự kiện `ppe_alert`. Có thể bật PPE mà không bật đếm (vẫn tính trong/ngoài để lọc). Người "trong vùng" xét theo điểm chân (hoặc tâm thân), nên mũ trên đầu nằm ngoài polygon vẫn được tính. Model chạy trên ảnh cắt của từng người trong vùng (`ppe.mode = "crop"`); người cao dưới 48 px bị bỏ qua.
+**PPE:** chỉ người đang ở trong **vùng có task PPE** mới được kiểm tra `Hardhat` / `NO-Hardhat` / `Gloves` / `NO-Gloves`. Dương và âm đều hiện trên Live; chỉ `NO-*` tô đỏ và gửi sự kiện `ppe_alert`. Có thể bật PPE mà không bật đếm. Người "trong vùng" xét theo quy tắc của vùng (hoặc tâm thân), nên mũ trên đầu nằm ngoài polygon vẫn được tính. Model chạy trên ảnh cắt của từng người trong vùng (`ppe.mode = "crop"`); người cao dưới 48 px bị bỏ qua.
 
 ### Chế độ Line
 
@@ -176,9 +179,12 @@ Giới hạn đã biết: găng màu da, mũ đen, người tóc sáng / hói c�
 - **Bộ lọc**: camera, khoảng thời gian (Từ / Đến) hoặc nút nhanh **Hôm nay / 24 giờ / 7 ngày**, bấm **Xem**.
 - **Thẻ tổng quan** (toàn bộ database): dung lượng, số lượt người và lượt thiếu PPE đã lưu, số sự kiện vào/ra và cảnh báo PPE, bản ghi đầu tiên, hàng đợi ghi.
 - **Theo giờ** (theo bộ lọc): tổng Vào / Ra / Lượt người / Cảnh báo và biểu đồ theo từng giờ.
+- **Theo vùng**: mỗi vùng một dòng: khách (ở trong vùng ≥ N giây, lọc người đi ngang), lượt ghé, thời gian ở lại trung bình / trung vị, vào / ra, số người đông nhất, trung bình số người, số lần đông. Ô "Khách = ở trong vùng ≥ N giây" đổi ngưỡng.
+- **Khách theo giờ**: cột xám = lượt ghé, xanh = khách; chọn Booth hoặc một vùng.
+- **Heatmap vị trí đứng**: ảnh camera phủ lớp màu xanh → vàng → đỏ theo số giây người đứng ở từng chỗ trong khoảng đã lọc.
 - **PPE theo lượt người**: số lượt người có mỗi nhãn PPE. Click một nhãn để lọc bảng lượt người theo nhãn đó.
-- **Bảng Lượt người**: mỗi người một dòng (thời gian, thời lượng, phía đầu/cuối, nhãn PPE, THIẾU PPE). Lọc "Chỉ người thiếu PPE", "Nhãn PPE …". 50 dòng/trang.
-- **Bảng Sự kiện**: vào/ra, cảnh báo PPE, camera mất tín hiệu, reset (cảnh báo vũ khí cũ vẫn xem được).
+- **Bảng Lượt người**: mỗi người một dòng (thời gian, thời lượng, phía đầu/cuối, các vùng đã ở + thời gian, KHÁCH, nhãn PPE, THIẾU PPE). Lọc "Chỉ người thiếu PPE", "Nhãn PPE …". 50 dòng/trang.
+- **Bảng Sự kiện**: vào/ra (kèm tên vùng), vùng đông người (bắt đầu / hết), cảnh báo PPE, camera mất tín hiệu, reset (cảnh báo vũ khí cũ vẫn xem được).
 - **Xuất CSV**: tải bảng đang lọc (mở được bằng Excel, tiếng Việt hiển thị đúng).
 - **Cấu hình lưu trữ** (bấm **Lưu**): Ghi dữ liệu; Lưu lượt người; Khôi phục bộ đếm khi khởi động lại; Lấy mẫu số liệu mỗi N giây; Giữ dữ liệu N ngày (0 = mãi mãi, dữ liệu cũ hơn tự xóa).
 - **Xóa toàn bộ dữ liệu**: phải gõ `DELETE` để xác nhận, không khôi phục được.
@@ -203,6 +209,9 @@ Trang cho bên vận hành kết nối app hiển thị. Định dạng dữ li�
 Màn hình trình chiếu cho khách xem (project `Greco2026DashBoard`, build bằng `build_show.bat`, mở toàn màn hình bằng `start_show.bat`).
 
 - **Người trong khung** (trái trên): mỗi người một dòng với Có mũ / Thiếu mũ / Có găng 2 tay / Thiếu găng 1 tay…; "chưa rõ" = đang trong vùng nhưng chưa đủ số lần xác nhận. Click để xem chi tiết từng nhãn (model hay suy ra từ hình, độ tin cậy).
-- **Tổng quan** (phải): đang thấy, trong / ngoài vùng, số người đang kiểm tra PPE, số người thiếu PPE, đếm từng nhãn.
+- Chỉ hiện người đang ở trong **Booth area**; mỗi người kèm các vùng đang ở và thời gian ở lại.
+- **Tổng quan** (phải): đang thấy, trong / ngoài vùng, số người đang kiểm tra PPE, số người thiếu PPE, khách hôm nay, đếm từng nhãn.
+- **Theo vùng** (phải): số người, thời gian ở lại trung bình, nhãn ĐÔNG khi vùng đang đông.
+- **Sàn 3D**: viền các vùng theo màu và lớp heatmap hôm nay (nút ô lưới ở thanh công cụ để bật / tắt). Vị trí trên sàn ánh xạ từ khung camera giống avatar.
 - **Camera** (trái dưới): video trực tiếp của camera đang chọn. Bấm vào hình hoặc nút ⤢ để phóng to giữa màn hình; nút thu nhỏ, phím `Esc` hoặc bấm ra ngoài để trả về góc.
-- Banner đỏ + tiếng bíp khi có người thiếu PPE (nút loa để tắt tiếng). Nút **Test** chạy dữ liệu giả, không cần server (không có hình camera).
+- Banner đỏ + tiếng bíp khi có người thiếu PPE hoặc một vùng bắt đầu đông (nút loa để tắt tiếng). Nút **Test** chạy dữ liệu giả, không cần server (không có hình camera).
