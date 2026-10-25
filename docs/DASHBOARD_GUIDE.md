@@ -212,6 +212,6 @@ Màn hình trình chiếu cho khách xem (project `Greco2026DashBoard`, build b�
 - Chỉ hiện người đang ở trong **Booth area**; mỗi người kèm các vùng đang ở và thời gian ở lại.
 - **Tổng quan** (phải): đang thấy, trong / ngoài vùng, số người đang kiểm tra PPE, số người thiếu PPE, khách hôm nay, đếm từng nhãn.
 - **Theo vùng** (phải): số người, thời gian ở lại trung bình, nhãn ĐÔNG khi vùng đang đông.
-- **Sàn 3D**: chỉ có lớp heatmap hôm nay (nút ô lưới ở thanh công cụ để bật / tắt), vị trí ánh xạ từ khung camera giống avatar. Không vẽ viền vùng trên sàn 3D vì phòng 3D không cập nhật theo bố cục booth thật; vùng chỉ vẽ ở trang Live và Line / Task.
+- **Sàn 3D**: không vẽ vùng hay heatmap, vì phòng 3D không cập nhật theo bố cục booth thật. Vùng chỉ vẽ ở trang Live và Line / Task; heatmap xem ở trang Live (nút Heatmap) và Dữ liệu.
 - **Camera** (trái dưới): video trực tiếp của camera đang chọn. Bấm vào hình hoặc nút ⤢ để phóng to giữa màn hình; nút thu nhỏ, phím `Esc` hoặc bấm ra ngoài để trả về góc.
 - Banner đỏ + tiếng bíp khi có người thiếu PPE hoặc một vùng bắt đầu đông (nút loa để tắt tiếng). Nút **Test** chạy dữ liệu giả, không cần server (không có hình camera).
