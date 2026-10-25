@@ -208,10 +208,12 @@ Trang cho bên vận hành kết nối app hiển thị. Định dạng dữ li�
 
 Màn hình trình chiếu cho khách xem (project `Greco2026DashBoard`, build bằng `build_show.bat`, mở toàn màn hình bằng `start_show.bat`).
 
-- **Người trong khung** (trái trên): mỗi người một dòng với Có mũ / Thiếu mũ / Có găng 2 tay / Thiếu găng 1 tay…; "chưa rõ" = đang trong vùng nhưng chưa đủ số lần xác nhận. Click để xem chi tiết từng nhãn (model hay suy ra từ hình, độ tin cậy).
-- Chỉ hiện người đang ở trong **Booth area**; mỗi người kèm các vùng đang ở và thời gian ở lại.
-- **Tổng quan** (phải): đang thấy, trong / ngoài vùng, số người đang kiểm tra PPE, số người thiếu PPE, khách hôm nay, đếm từng nhãn.
+Màn hình này chỉ cho biết **ai đang ở vùng nào và bao lâu**; không hiện PPE (có / thiếu mũ, găng). Server vẫn kiểm tra PPE như cũ ở các vùng có task PPE: xem ở trang Live, PPE và Dữ liệu.
+
+- **Người trong khung** (trái trên): chỉ người đang ở trong **Booth area**; mỗi người kèm các vùng đang ở và thời gian ở lại (ví dụ "3D Box Game · 1:42"). Nhãn trên đầu avatar hiện cùng nội dung. Click để xem chi tiết.
+- **Tổng quan** (phải): đang thấy, trong / ngoài vùng, khách hôm nay.
 - **Theo vùng** (phải): số người, thời gian ở lại trung bình, nhãn ĐÔNG khi vùng đang đông.
+- **Sự kiện gần đây**: vào / ra từng vùng (kèm thời gian đã ở), đông / hết đông, trạng thái camera.
 - **Sàn 3D**: không vẽ vùng hay heatmap, vì phòng 3D không cập nhật theo bố cục booth thật. Vùng chỉ vẽ ở trang Live và Line / Task; heatmap xem ở trang Live (nút Heatmap) và Dữ liệu.
 - **Camera** (trái dưới): video trực tiếp của camera đang chọn. Bấm vào hình hoặc nút ⤢ để phóng to giữa màn hình; nút thu nhỏ, phím `Esc` hoặc bấm ra ngoài để trả về góc.
-- Banner đỏ + tiếng bíp khi có người thiếu PPE hoặc một vùng bắt đầu đông (nút loa để tắt tiếng). Nút **Test** chạy dữ liệu giả, không cần server (không có hình camera).
+- Banner đỏ + tiếng bíp khi một vùng bắt đầu đông (nút loa để tắt tiếng). Nút **Test** chạy dữ liệu giả, không cần server (không có hình camera).
